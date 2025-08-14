@@ -1,0 +1,61 @@
+version: "1.0"
+
+workspaces:
+  frontend:
+    path: ./frontend
+    container: frontend  # Optional: run tasks in this Docker container
+    env:
+      NODE_ENV: development
+    tasks:
+      install:
+        command: ["npm", "install"]
+        description: "Install frontend dependencies"
+        inputs: ["package.json", "package-lock.json"]
+        outputs: ["node_modules/**/*"]
+        cache: true
+      
+      build:
+        command: ["npm", "run", "build"]
+        description: "Build frontend application"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "public/**/*", "package.json"]
+        outputs: ["dist/**/*"]
+        cache: true
+      
+      test:
+        command: ["npm", "test"]
+        description: "Run frontend tests"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "test/**/*"]
+        cache: true
+
+  backend:
+    path: ./backend
+    container: backend  # Optional: run tasks in this Docker container
+    env:
+      COMPOSER_CACHE_DIR: /tmp/composer-cache
+    tasks:
+      install:
+        command: ["composer", "install"]
+        description: "Install backend dependencies"
+        inputs: ["composer.json", "composer.lock"]
+        outputs: ["vendor/**/*"]
+        cache: true
+      
+      test:
+        command: ["./vendor/bin/phpunit"]
+        description: "Run backend tests"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "tests/**/*"]
+        cache: true
+      
+      build:
+        command: ["php", "artisan", "optimize"]
+        description: "Build and optimize backend"
+        depends_on: ["install", "frontend:build"]
+        inputs: ["src/**/*", "config/**/*"]
+        cache: true
+
+# Optional Docker configuration
+docker:
+  compose_file: docker-compose.yml
