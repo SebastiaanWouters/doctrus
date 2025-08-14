@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: node:18-alpine
+    working_dir: /workspace
+    volumes:
+      - ../:/workspace
+      - node_modules:/workspace/frontend/node_modules
+    environment:
+      - NODE_ENV=development
+
+  backend:
+    image: php:8.2-cli-alpine
+    working_dir: /workspace
+    volumes:
+      - ../:/workspace
+      - composer_cache:/tmp/composer-cache
+    environment:
+      - APP_ENV=development
+      - COMPOSER_CACHE_DIR=/tmp/composer-cache
+
+  database:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=doctrus_dev
+      - POSTGRES_USER=doctrus
+      - POSTGRES_PASSWORD=secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  node_modules:
+  composer_cache:
+  postgres_data:

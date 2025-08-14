@@ -1,0 +1,115 @@
+# Example: Laravel project with asset compilation
+version: "1.0"
+
+workspaces:
+  app:
+    path: .
+    container: app
+    env:
+      APP_ENV: local
+    tasks:
+      composer:
+        command: ["composer", "install"]
+        description: "Install PHP dependencies"
+        inputs: ["composer.json", "composer.lock"]
+        outputs: ["vendor/**/*"]
+        cache: true
+
+      npm:
+        command: ["npm", "ci"]
+        description: "Install Node.js dependencies"
+        inputs: ["package.json", "package-lock.json"]
+        outputs: ["node_modules/**/*"]
+        cache: true
+
+      assets:dev:
+        command: ["npm", "run", "dev"]
+        description: "Compile development assets"
+        depends_on: ["npm"]
+        inputs: ["resources/**/*", "webpack.mix.js"]
+        outputs: ["public/js/**/*", "public/css/**/*"]
+        cache: true
+
+      assets:prod:
+        command: ["npm", "run", "production"]
+        description: "Compile production assets"
+        depends_on: ["npm"]
+        inputs: ["resources/**/*", "webpack.mix.js"]
+        outputs: ["public/js/**/*", "public/css/**/*", "public/mix-manifest.json"]
+        cache: true
+
+      key:generate:
+        command: ["php", "artisan", "key:generate"]
+        description: "Generate application key"
+        depends_on: ["composer"]
+
+      migrate:
+        command: ["php", "artisan", "migrate"]
+        description: "Run database migrations"
+        depends_on: ["composer"]
+
+      migrate:fresh:
+        command: ["php", "artisan", "migrate:fresh", "--seed"]
+        description: "Fresh migration with seeding"
+        depends_on: ["composer"]
+
+      test:
+        command: ["php", "artisan", "test"]
+        description: "Run PHPUnit tests"
+        depends_on: ["composer", "migrate"]
+        inputs: ["app/**/*", "tests/**/*", "phpunit.xml"]
+
+      test:feature:
+        command: ["php", "artisan", "test", "--testsuite=Feature"]
+        description: "Run feature tests"
+        depends_on: ["composer", "migrate"]
+
+      test:unit:
+        command: ["php", "artisan", "test", "--testsuite=Unit"]
+        description: "Run unit tests"
+        depends_on: ["composer"]
+
+      pint:
+        command: ["./vendor/bin/pint"]
+        description: "Fix code style"
+        depends_on: ["composer"]
+        inputs: ["app/**/*", "config/**/*", "database/**/*", "routes/**/*", "tests/**/*"]
+
+      phpstan:
+        command: ["./vendor/bin/phpstan", "analyse"]
+        description: "Static analysis"
+        depends_on: ["composer"]
+        inputs: ["app/**/*", "phpstan.neon"]
+
+      optimize:
+        command: ["php", "artisan", "optimize"]
+        description: "Cache configuration and routes"
+        depends_on: ["composer"]
+
+      serve:
+        command: ["php", "artisan", "serve"]
+        description: "Start development server"
+        depends_on: ["composer", "assets:dev"]
+
+      queue:work:
+        command: ["php", "artisan", "queue:work"]
+        description: "Start queue worker"
+        depends_on: ["composer", "migrate"]
+
+      schedule:work:
+        command: ["php", "artisan", "schedule:work"]
+        description: "Run scheduled tasks"
+        depends_on: ["composer"]
+
+      build:
+        command: ["echo", "Build complete"]
+        description: "Complete build process"
+        depends_on: ["composer", "assets:prod", "optimize"]
+
+      deploy:
+        command: ["php", "artisan", "deploy"]
+        description: "Deploy application"
+        depends_on: ["build", "migrate"]
+
+docker:
+  compose_file: docker-compose.yml

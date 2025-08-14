@@ -1,0 +1,135 @@
+# Example: Next.js frontend + NestJS backend monorepo
+version: "1.0"
+
+workspaces:
+  web:
+    path: ./apps/web
+    container: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    tasks:
+      install:
+        command: ["npm", "ci"]
+        description: "Install Next.js dependencies"
+        inputs: ["package.json", "package-lock.json"]
+        outputs: ["node_modules/**/*"]
+        cache: true
+
+      dev:
+        command: ["npm", "run", "dev"]
+        description: "Start Next.js development server"
+        depends_on: ["install"]
+
+      build:
+        command: ["npm", "run", "build"]
+        description: "Build Next.js application"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "public/**/*", "next.config.js", "tailwind.config.js"]
+        outputs: [".next/**/*"]
+        cache: true
+
+      test:
+        command: ["npm", "run", "test"]
+        description: "Run frontend tests"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "__tests__/**/*", "jest.config.js"]
+
+      lint:
+        command: ["npm", "run", "lint"]
+        description: "Lint frontend code"
+        depends_on: ["install"]
+        inputs: ["src/**/*", ".eslintrc.json"]
+
+  api:
+    path: ./apps/api
+    container: backend
+    env:
+      NODE_ENV: development
+    tasks:
+      install:
+        command: ["npm", "ci"]
+        description: "Install NestJS dependencies"
+        inputs: ["package.json", "package-lock.json"]
+        outputs: ["node_modules/**/*"]
+        cache: true
+
+      dev:
+        command: ["npm", "run", "start:dev"]
+        description: "Start NestJS development server"
+        depends_on: ["install", "migrate"]
+
+      build:
+        command: ["npm", "run", "build"]
+        description: "Build NestJS application"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "nest-cli.json", "tsconfig.json"]
+        outputs: ["dist/**/*"]
+        cache: true
+
+      test:
+        command: ["npm", "run", "test"]
+        description: "Run API tests"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "test/**/*", "jest.config.js"]
+
+      test:e2e:
+        command: ["npm", "run", "test:e2e"]
+        description: "Run end-to-end tests"
+        depends_on: ["install", "migrate"]
+
+      migrate:
+        command: ["npm", "run", "migration:run"]
+        description: "Run database migrations"
+        depends_on: ["install"]
+
+  shared:
+    path: ./packages/shared
+    container: frontend
+    tasks:
+      install:
+        command: ["npm", "ci"]
+        description: "Install shared package dependencies"
+        inputs: ["package.json", "package-lock.json"]
+        outputs: ["node_modules/**/*"]
+        cache: true
+
+      build:
+        command: ["npm", "run", "build"]
+        description: "Build shared package"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "tsconfig.json"]
+        outputs: ["dist/**/*"]
+        cache: true
+
+      test:
+        command: ["npm", "run", "test"]
+        description: "Test shared package"
+        depends_on: ["install"]
+        inputs: ["src/**/*", "test/**/*"]
+
+# Global tasks that run across workspaces
+  root:
+    path: .
+    tasks:
+      install:all:
+        command: ["npm", "run", "install:all"]
+        description: "Install all dependencies"
+        depends_on: ["web:install", "api:install", "shared:install"]
+
+      build:all:
+        command: ["echo", "Build complete"]
+        description: "Build all applications"
+        depends_on: ["shared:build", "web:build", "api:build"]
+
+      test:all:
+        command: ["echo", "Tests complete"]
+        description: "Run all tests"
+        depends_on: ["shared:test", "web:test", "api:test"]
+
+      deploy:staging:
+        command: ["docker", "compose", "-f", "docker-compose.staging.yml", "up", "-d"]
+        description: "Deploy to staging"
+        depends_on: ["build:all"]
+
+docker:
+  compose_file: docker-compose.yml
