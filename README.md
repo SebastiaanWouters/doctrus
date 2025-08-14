@@ -17,13 +17,13 @@ A powerful monorepo task runner with Docker Compose integration, intelligent cac
 
 **Linux/WSL:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/username/doctrus/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/SebastiaanWouters/doctrus/main/install.sh | bash
 ```
 
 **Manual Installation:**
 ```bash
 # Download the binary for your platform
-wget https://github.com/username/doctrus/releases/latest/download/doctrus-linux-amd64
+wget https://github.com/SebastiaanWouters/doctrus/releases/latest/download/doctrus-linux-amd64
 chmod +x doctrus-linux-amd64
 sudo mv doctrus-linux-amd64 /usr/local/bin/doctrus
 ```
