@@ -8,7 +8,7 @@ set -e
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 TEMP_DIR="$(mktemp -d)"
 BINARY_NAME="doctrus"
-GITHUB_REPO="doctrus/doctrus"  # Replace with actual repo when published
+GITHUB_REPO="SebastiaanWouters/doctrus"
 VERSION="${VERSION:-latest}"
 
 # Colors for output
