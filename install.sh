@@ -131,9 +131,17 @@ build_from_source() {
     
     cd "$TEMP_DIR"
     
+    git_clone_failed=false
     if command -v git >/dev/null 2>&1; then
-        git clone "https://github.com/${GITHUB_REPO}.git" .
+        git clone "git@github.com:${GITHUB_REPO}.git" . 2>/dev/null || {
+            warn "Git clone failed, falling back to zip download"
+            git_clone_failed=true
+        }
     else
+        git_clone_failed=true
+    fi
+    
+    if [ "$git_clone_failed" = "true" ]; then
         if command -v curl >/dev/null 2>&1; then
             curl -L "https://github.com/${GITHUB_REPO}/archive/main.zip" -o source.zip
         elif command -v wget >/dev/null 2>&1; then
