@@ -66,13 +66,6 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		"-T",
 	}
 
-	workspaceRelPath, err := filepath.Rel(e.workingDir, execution.AbsPath)
-	if err != nil {
-		workspaceRelPath = execution.AbsPath
-	}
-
-	args = append(args, "-w", fmt.Sprintf("/workspace/%s", workspaceRelPath))
-
 	env := e.buildEnvVars(execution)
 	for key, value := range env {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))

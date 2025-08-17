@@ -286,7 +286,7 @@ doctrus validate -v        # Verbose validation output
 Doctrus integrates with Docker Compose to run tasks in containers:
 
 1. **Container Tasks**: Set `container` in workspace config
-2. **File Mounting**: Workspace paths are mounted as `/workspace/{path}`
+2. **Working Directory**: Uses the container's default working directory from docker-compose.yml
 3. **Environment**: Environment variables are passed to containers
 4. **Networking**: Uses Docker Compose networking
 
