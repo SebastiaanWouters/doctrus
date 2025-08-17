@@ -342,3 +342,172 @@ func TestConfigGetTask(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEffectiveContainer(t *testing.T) {
+	config := &Config{
+		Version: "1.0",
+		Workspaces: map[string]Workspace{
+			"frontend": {
+				Path:      "./frontend",
+				Container: "frontend-container",
+				Tasks: map[string]Task{
+					"build": {
+						Command: []string{"npm", "build"},
+					},
+					"test": {
+						Command:   []string{"npm", "test"},
+						Container: stringPtr("test-container"),
+					},
+					"local": {
+						Command: []string{"echo", "local"},
+						Docker: &TaskDockerConfig{
+							Disable: true,
+						},
+					},
+					"override": {
+						Command:   []string{"npm", "lint"},
+						Container: stringPtr("linter-container"),
+					},
+				},
+			},
+			"backend": {
+				Path: "./backend",
+				Tasks: map[string]Task{
+					"build": {
+						Command: []string{"go", "build"},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		workspaceName      string
+		taskName           string
+		expectedContainer  string
+	}{
+		{
+			name:              "workspace container used when no task override",
+			workspaceName:     "frontend",
+			taskName:          "build",
+			expectedContainer: "frontend-container",
+		},
+		{
+			name:              "task container overrides workspace container",
+			workspaceName:     "frontend",
+			taskName:          "test",
+			expectedContainer: "test-container",
+		},
+		{
+			name:              "docker disabled at task level",
+			workspaceName:     "frontend",
+			taskName:          "local",
+			expectedContainer: "",
+		},
+		{
+			name:              "task container override",
+			workspaceName:     "frontend",
+			taskName:          "override",
+			expectedContainer: "linter-container",
+		},
+		{
+			name:              "no workspace container",
+			workspaceName:     "backend",
+			taskName:          "build",
+			expectedContainer: "",
+		},
+		{
+			name:              "non-existent workspace",
+			workspaceName:     "nonexistent",
+			taskName:          "build",
+			expectedContainer: "",
+		},
+		{
+			name:              "non-existent task",
+			workspaceName:     "frontend",
+			taskName:          "nonexistent",
+			expectedContainer: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := config.GetEffectiveContainer(tt.workspaceName, tt.taskName)
+			if container != tt.expectedContainer {
+				t.Errorf("GetEffectiveContainer() = %v, want %v", container, tt.expectedContainer)
+			}
+		})
+	}
+}
+
+func TestGetEffectiveDockerConfig(t *testing.T) {
+	config := &Config{
+		Version: "1.0",
+		Docker: DockerConfig{
+			ComposeFile: "docker-compose.yml",
+		},
+		Workspaces: map[string]Workspace{
+			"frontend": {
+				Path: "./frontend",
+				Tasks: map[string]Task{
+					"build": {
+						Command: []string{"npm", "build"},
+					},
+					"test": {
+						Command: []string{"npm", "test"},
+						Docker: &TaskDockerConfig{
+							ComposeFile: "docker-compose.test.yml",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		workspaceName      string
+		taskName           string
+		expectedCompose    string
+	}{
+		{
+			name:            "uses global docker config by default",
+			workspaceName:   "frontend",
+			taskName:        "build",
+			expectedCompose: "docker-compose.yml",
+		},
+		{
+			name:            "task docker config overrides global",
+			workspaceName:   "frontend",
+			taskName:        "test",
+			expectedCompose: "docker-compose.test.yml",
+		},
+		{
+			name:            "non-existent workspace returns global config",
+			workspaceName:   "nonexistent",
+			taskName:        "build",
+			expectedCompose: "docker-compose.yml",
+		},
+		{
+			name:            "non-existent task returns global config",
+			workspaceName:   "frontend",
+			taskName:        "nonexistent",
+			expectedCompose: "docker-compose.yml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dockerConfig := config.GetEffectiveDockerConfig(tt.workspaceName, tt.taskName)
+			if dockerConfig.ComposeFile != tt.expectedCompose {
+				t.Errorf("GetEffectiveDockerConfig().ComposeFile = %v, want %v", dockerConfig.ComposeFile, tt.expectedCompose)
+			}
+		})
+	}
+}
+
+// Helper function to create string pointers for tests
+func stringPtr(s string) *string {
+	return &s
+}

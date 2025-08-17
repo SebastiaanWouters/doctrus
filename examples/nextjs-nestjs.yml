@@ -39,6 +39,15 @@ workspaces:
         description: "Lint frontend code"
         depends_on: ["install"]
         inputs: ["src/**/*", ".eslintrc.json"]
+        # Override to use a different container for linting
+        container: "linter"
+
+      # Task that runs locally even though workspace has container
+      local-check:
+        command: ["echo", "Running locally"]
+        description: "Run a local check without Docker"
+        docker:
+          disable: true
 
   api:
     path: ./apps/api
@@ -76,11 +85,16 @@ workspaces:
         command: ["npm", "run", "test:e2e"]
         description: "Run end-to-end tests"
         depends_on: ["install", "migrate"]
+        # Use different docker-compose file for e2e tests
+        docker:
+          compose_file: "docker-compose.test.yml"
 
       migrate:
         command: ["npm", "run", "migration:run"]
         description: "Run database migrations"
         depends_on: ["install"]
+        # Override to use database container instead of backend
+        container: "database"
 
   shared:
     path: ./packages/shared

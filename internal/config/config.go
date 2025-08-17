@@ -29,10 +29,17 @@ type Task struct {
 	Outputs     []string          `yaml:"outputs,omitempty"`
 	Cache       bool              `yaml:"cache,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
+	Container   *string           `yaml:"container,omitempty"`
+	Docker      *TaskDockerConfig `yaml:"docker,omitempty"`
 }
 
 type DockerConfig struct {
 	ComposeFile string `yaml:"compose_file,omitempty"`
+}
+
+type TaskDockerConfig struct {
+	ComposeFile string `yaml:"compose_file,omitempty"`
+	Disable     bool   `yaml:"disable,omitempty"`
 }
 
 func Load(configPath string) (*Config, error) {
@@ -103,4 +110,55 @@ func (c *Config) GetTask(workspaceName, taskName string) (*Task, bool) {
 
 	task, exists := workspace.Tasks[taskName]
 	return &task, exists
+}
+
+// GetEffectiveContainer returns the effective container name for a task,
+// considering task-level overrides and workspace defaults
+func (c *Config) GetEffectiveContainer(workspaceName, taskName string) string {
+	workspace, exists := c.Workspaces[workspaceName]
+	if !exists {
+		return ""
+	}
+
+	task, exists := workspace.Tasks[taskName]
+	if !exists {
+		return ""
+	}
+
+	// Check if Docker is explicitly disabled at task level
+	if task.Docker != nil && task.Docker.Disable {
+		return ""
+	}
+
+	// Task-level container override takes precedence
+	if task.Container != nil {
+		return *task.Container
+	}
+
+	// Fall back to workspace container
+	return workspace.Container
+}
+
+// GetEffectiveDockerConfig returns the effective Docker configuration for a task,
+// considering task-level overrides and workspace/global defaults
+func (c *Config) GetEffectiveDockerConfig(workspaceName, taskName string) DockerConfig {
+	workspace, exists := c.Workspaces[workspaceName]
+	if !exists {
+		return c.Docker
+	}
+
+	task, exists := workspace.Tasks[taskName]
+	if !exists {
+		return c.Docker
+	}
+
+	// Start with global Docker config
+	config := c.Docker
+
+	// Override with task-specific Docker config if present
+	if task.Docker != nil && task.Docker.ComposeFile != "" {
+		config.ComposeFile = task.Docker.ComposeFile
+	}
+
+	return config
 }

@@ -36,14 +36,16 @@ func NewExecutor(cfg *config.Config, workingDir string) *Executor {
 }
 
 func (e *Executor) Execute(ctx context.Context, execution *workspace.TaskExecution) *ExecutionResult {
-	if execution.Workspace.Container != "" {
-		return e.executeInContainer(ctx, execution)
+	effectiveContainer := e.config.GetEffectiveContainer(execution.WorkspaceName, execution.TaskName)
+	if effectiveContainer != "" {
+		return e.executeInContainer(ctx, execution, effectiveContainer)
 	}
 	return e.executeLocal(ctx, execution)
 }
 
-func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.TaskExecution) *ExecutionResult {
-	composeFile := e.config.Docker.ComposeFile
+func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.TaskExecution, containerName string) *ExecutionResult {
+	dockerConfig := e.config.GetEffectiveDockerConfig(execution.WorkspaceName, execution.TaskName)
+	composeFile := dockerConfig.ComposeFile
 	if composeFile == "" {
 		composeFile = "docker-compose.yml"
 	}
@@ -61,7 +63,7 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 
 	// Check if cache is enabled for this task
 	if execution.Task.Cache {
-		return e.executeWithCacheMount(ctx, execution, composeFile)
+		return e.executeWithCacheMount(ctx, execution, composeFile, containerName)
 	}
 
 	args := []string{
@@ -76,7 +78,7 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	args = append(args, execution.Workspace.Container)
+	args = append(args, containerName)
 	args = append(args, execution.Task.Command...)
 
 	return e.runCommand(ctx, "docker", args, execution.AbsPath, env)
@@ -141,7 +143,8 @@ func (e *Executor) buildEnvVars(execution *workspace.TaskExecution) map[string]s
 	}
 
 	// Set cache directory for container execution
-	if execution.Workspace.Container != "" {
+	effectiveContainer := e.config.GetEffectiveContainer(execution.WorkspaceName, execution.TaskName)
+	if effectiveContainer != "" {
 		cacheDir := e.getCacheDir()
 		env["DOCTRUS_CACHE_DIR"] = cacheDir
 	}
@@ -181,9 +184,9 @@ func (e *Executor) GetRunningContainers() ([]string, error) {
 	return containers, nil
 }
 
-func (e *Executor) executeWithCacheMount(ctx context.Context, execution *workspace.TaskExecution, composeFile string) *ExecutionResult {
+func (e *Executor) executeWithCacheMount(ctx context.Context, execution *workspace.TaskExecution, composeFile string, containerName string) *ExecutionResult {
 	// Get the container configuration from docker-compose
-	image, err := e.getContainerImage(composeFile, execution.Workspace.Container)
+	image, err := e.getContainerImage(composeFile, containerName)
 	if err != nil {
 		return &ExecutionResult{
 			ExitCode: 1,
