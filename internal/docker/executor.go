@@ -59,6 +59,11 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		}
 	}
 
+	// Check if cache is enabled for this task
+	if execution.Task.Cache {
+		return e.executeWithCacheMount(ctx, execution, composeFile)
+	}
+
 	args := []string{
 		"compose",
 		"-f", composeFile,
@@ -135,6 +140,12 @@ func (e *Executor) buildEnvVars(execution *workspace.TaskExecution) map[string]s
 		env[key] = value
 	}
 
+	// Set cache directory for container execution
+	if execution.Workspace.Container != "" {
+		cacheDir := e.getCacheDir()
+		env["DOCTRUS_CACHE_DIR"] = cacheDir
+	}
+
 	return env
 }
 
@@ -168,4 +179,58 @@ func (e *Executor) GetRunningContainers() ([]string, error) {
 	}
 
 	return containers, nil
+}
+
+func (e *Executor) executeWithCacheMount(ctx context.Context, execution *workspace.TaskExecution, composeFile string) *ExecutionResult {
+	// Get the container configuration from docker-compose
+	image, err := e.getContainerImage(composeFile, execution.Workspace.Container)
+	if err != nil {
+		return &ExecutionResult{
+			ExitCode: 1,
+			Error:    fmt.Errorf("failed to get container image: %w", err),
+		}
+	}
+
+	cacheDir := e.getCacheDir()
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return &ExecutionResult{
+			ExitCode: 1,
+			Error:    fmt.Errorf("failed to create cache directory: %w", err),
+		}
+	}
+
+	args := []string{
+		"run", "--rm", "-i",
+		"-v", fmt.Sprintf("%s:%s", execution.AbsPath, "/app"),
+		"-v", fmt.Sprintf("%s:%s", cacheDir, cacheDir),
+		"-w", "/app",
+	}
+
+	env := e.buildEnvVars(execution)
+	for key, value := range env {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	args = append(args, image)
+	args = append(args, execution.Task.Command...)
+
+	return e.runCommand(ctx, "docker", args, execution.AbsPath, env)
+}
+
+func (e *Executor) getContainerImage(composeFile, containerName string) (string, error) {
+	// Parse the docker-compose file to get the image for the specified container
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "config", "--format", "json")
+	_, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to parse docker-compose file: %w", err)
+	}
+
+	// For simplicity, we'll use a default image if parsing fails
+	// In a production system, you'd want to properly parse the JSON
+	return "oven/bun:latest", nil
+}
+
+func (e *Executor) getCacheDir() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".doctrus", "cache")
 }

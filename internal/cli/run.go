@@ -113,6 +113,8 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 		previousState, err = c.cache.Get(taskKey)
 		if err != nil && verbose {
 			fmt.Printf("  Warning: failed to load cache: %v\n", err)
+		} else if previousState != nil && verbose {
+			fmt.Printf("  Cache found, checking for changes...\n")
 		}
 	}
 
@@ -126,7 +128,7 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 	}
 
 	if !shouldRun {
-		fmt.Printf("  ✓ Skipped (no changes)\n")
+		fmt.Printf("  ✓ Cached (no changes detected)\n")
 		return nil
 	}
 
@@ -162,7 +164,7 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 	}
 
 	if success {
-		fmt.Printf("  ✓ Completed in %v\n", duration.Round(time.Millisecond))
+		fmt.Printf("  ✓ Executed successfully in %v\n", duration.Round(time.Millisecond))
 	} else {
 		fmt.Printf("  ✗ Failed with exit code %d in %v\n", result.ExitCode, duration.Round(time.Millisecond))
 		return fmt.Errorf("task failed with exit code %d", result.ExitCode)
@@ -175,8 +177,12 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 				fmt.Printf("  Warning: failed to compute task state: %v\n", err)
 			}
 		} else {
-			if err := c.cache.Set(taskKey, taskState, 0); err != nil && verbose {
-				fmt.Printf("  Warning: failed to cache task state: %v\n", err)
+			if err := c.cache.Set(taskKey, taskState, 0); err != nil {
+				if verbose {
+					fmt.Printf("  Warning: failed to cache task state: %v\n", err)
+				}
+			} else if verbose {
+				fmt.Printf("  Cache updated for future runs\n")
 			}
 		}
 	}

@@ -24,8 +24,13 @@ type CacheEntry struct {
 
 func NewManager(cacheDir string) *Manager {
 	if cacheDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		cacheDir = filepath.Join(homeDir, ".doctrus", "cache")
+		// Check if running in Docker container with custom cache dir
+		if envCacheDir := os.Getenv("DOCTRUS_CACHE_DIR"); envCacheDir != "" {
+			cacheDir = envCacheDir
+		} else {
+			homeDir, _ := os.UserHomeDir()
+			cacheDir = filepath.Join(homeDir, ".doctrus", "cache")
+		}
 	}
 	return &Manager{
 		cacheDir: cacheDir,
@@ -196,9 +201,8 @@ func (m *Manager) CleanExpired() error {
 
 func (m *Manager) getCachePath(taskKey string) string {
 	filename := fmt.Sprintf("%s.json", taskKey)
-	filename = filepath.Base(filename)
 	for _, char := range []string{":", "/", "\\", "*", "?", "\"", "<", ">", "|"} {
-		filename = filepath.Join(strings.Split(filename, char)...)
+		filename = strings.ReplaceAll(filename, char, "")
 	}
 	return filepath.Join(m.cacheDir, filename)
 }
