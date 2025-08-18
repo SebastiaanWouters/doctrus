@@ -13,6 +13,7 @@ import (
 
 type Manager struct {
 	cacheDir string
+	basePath string
 }
 
 type CacheEntry struct {
@@ -22,18 +23,23 @@ type CacheEntry struct {
 	TTL       time.Duration    `json:"ttl,omitempty"`
 }
 
-func NewManager(cacheDir string) *Manager {
+func NewManager(cacheDir string, basePath string) *Manager {
 	if cacheDir == "" {
 		// Check if running in Docker container with custom cache dir
 		if envCacheDir := os.Getenv("DOCTRUS_CACHE_DIR"); envCacheDir != "" {
 			cacheDir = envCacheDir
+		} else if basePath != "" {
+			// Use base path (where doctrus.yml is) for cache directory
+			cacheDir = filepath.Join(basePath, ".doctrus", "cache")
 		} else {
-			homeDir, _ := os.UserHomeDir()
-			cacheDir = filepath.Join(homeDir, ".doctrus", "cache")
+			// Fallback to current working directory
+			cwd, _ := os.Getwd()
+			cacheDir = filepath.Join(cwd, ".doctrus", "cache")
 		}
 	}
 	return &Manager{
 		cacheDir: cacheDir,
+		basePath: basePath,
 	}
 }
 

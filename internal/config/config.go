@@ -42,31 +42,72 @@ type TaskDockerConfig struct {
 	Disable     bool   `yaml:"disable,omitempty"`
 }
 
-func Load(configPath string) (*Config, error) {
+func Load(configPath string) (*Config, string, error) {
 	if configPath == "" {
 		configPath = "doctrus.yml"
 	}
 
-	absPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve config path: %w", err)
+	// If config path is not absolute, search for it in parent directories
+	var absPath string
+	var configDir string
+	
+	if filepath.IsAbs(configPath) {
+		absPath = configPath
+		configDir = filepath.Dir(absPath)
+	} else {
+		// Search for config file in current and parent directories
+		currentDir, err := os.Getwd()
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get working directory: %w", err)
+		}
+		
+		foundPath, foundDir := findConfigInParents(currentDir, configPath)
+		if foundPath == "" {
+			// If not found, try the original path relative to cwd
+			absPath = filepath.Join(currentDir, configPath)
+			configDir = currentDir
+		} else {
+			absPath = foundPath
+			configDir = foundDir
+		}
 	}
 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", absPath, err)
+		return nil, "", fmt.Errorf("failed to read config file %s: %w", absPath, err)
 	}
 
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, "", fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	if err := config.validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return nil, "", fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	return &config, nil
+	return &config, configDir, nil
+}
+
+// findConfigInParents searches for a config file in the current and parent directories
+func findConfigInParents(startDir, configName string) (string, string) {
+	currentDir := startDir
+	
+	for {
+		configPath := filepath.Join(currentDir, configName)
+		if _, err := os.Stat(configPath); err == nil {
+			return configPath, currentDir
+		}
+		
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			// Reached root directory
+			break
+		}
+		currentDir = parentDir
+	}
+	
+	return "", ""
 }
 
 func (c *Config) validate() error {

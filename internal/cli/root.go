@@ -30,20 +30,24 @@ type CLI struct {
 }
 
 func newCLI() (*CLI, error) {
-	cfg, err := config.Load(configPath)
+	cfg, configDir, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	basePath, err := filepath.Abs(".")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	// Use the directory containing doctrus.yml as the base path
+	basePath := configDir
+	if basePath == "" {
+		basePath, err = filepath.Abs(".")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get working directory: %w", err)
+		}
 	}
 
 	workspaceManager := workspace.NewManager(cfg, basePath)
 	executor := docker.NewExecutor(cfg, basePath)
 	tracker := deps.NewTracker(basePath)
-	cacheManager := cache.NewManager(cacheDir)
+	cacheManager := cache.NewManager(cacheDir, basePath)
 
 	if err := workspaceManager.ValidateWorkspaces(); err != nil {
 		return nil, fmt.Errorf("workspace validation failed: %w", err)
