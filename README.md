@@ -46,7 +46,7 @@ doctrus list
 # Run a specific task
 doctrus run frontend:build
 
-# Run task in any workspace (if unique)
+# Run task in all workspaces where it exists
 doctrus run test
 
 # Validate configuration
@@ -116,6 +116,107 @@ docker:
   compose_file: docker-compose.yml
 ```
 
+## Multi-Workspace Task Execution
+
+When running a task without specifying a workspace, Doctrus will execute the task in **all workspaces** where it is defined. This behavior aligns with industry standards from tools like Turborepo, Nx, and Lerna.
+
+### Examples
+
+```yaml
+version: "1.0"
+
+workspaces:
+  frontend:
+    path: ./frontend
+    tasks:
+      build:
+        command: ["npm", "run", "build"]
+      test:
+        command: ["npm", "test"]
+
+  backend:
+    path: ./backend
+    tasks:
+      build:
+        command: ["go", "build", "."]
+      lint:
+        command: ["golangci-lint", "run"]
+
+  shared:
+    path: ./shared
+    tasks:
+      build:
+        command: ["npm", "run", "build"]
+```
+
+**Task Execution Examples:**
+```bash
+# Runs build in frontend, backend, AND shared workspaces
+doctrus run build
+
+# Runs test only in frontend (only workspace that has it)
+doctrus run test
+
+# Runs lint only in backend (only workspace that has it)
+doctrus run lint
+
+# Run specific workspace task
+doctrus run frontend:build
+```
+
+### Compound Tasks
+
+Create tasks that orchestrate other tasks without executing commands themselves:
+
+```yaml
+workspaces:
+  frontend:
+    path: ./frontend
+    tasks:
+      install:
+        command: ["npm", "ci"]
+        cache: true
+
+      build:
+        command: ["npm", "run", "build"]
+        depends_on: ["install"]
+        cache: true
+
+      test:
+        command: ["npm", "test"]
+        depends_on: ["install"]
+
+      # Compound task - no command, only dependencies
+      full-build:
+        description: "Complete build and test"
+        depends_on: ["build", "test"]
+
+  root:
+    path: .
+    tasks:
+      # Cross-workspace compound task
+      build-all:
+        description: "Build everything"
+        depends_on: ["frontend:full-build", "backend:build"]
+
+      # Sequential compound task
+      deploy:
+        description: "Deploy all components"
+        depends_on: ["build-all"]
+```
+
+**Running Compound Tasks:**
+```bash
+# Runs install → build → test → full-build (compound)
+doctrus run frontend:full-build
+
+# Runs all build tasks across workspaces, then build-all (compound)
+doctrus run root:build-all
+
+# If multiple workspaces have compound tasks with the same name
+doctrus run full-build  # Runs in all workspaces that have it
+```
+
 ## Configuration Reference
 
 ### Workspace Configuration
@@ -127,7 +228,7 @@ docker:
 
 ### Task Configuration
 
-- **command**: Command to execute (array of strings)
+- **command**: Command to execute (array of strings, optional for compound tasks)
 - **description**: Human-readable description
 - **depends_on**: Array of task dependencies
   - `"task"` - task in same workspace
@@ -136,6 +237,18 @@ docker:
 - **outputs**: File patterns produced by task (supports advanced globs including `**/*`)
 - **cache**: Enable/disable caching (default: false)
 - **env**: Task-specific environment variables
+
+#### Compound Tasks
+
+Tasks without a command that only exist to orchestrate dependencies:
+
+```yaml
+tasks:
+  full-build:
+    description: "Build and test everything"
+    depends_on: ["build", "test"]
+    # No command - this is a compound task
+```
 
 ### Docker Configuration
 
@@ -245,7 +358,7 @@ Run tasks with dependency resolution.
 
 **Examples:**
 ```bash
-doctrus run build                    # Run 'build' in any workspace
+doctrus run build                    # Run 'build' in all workspaces where it exists
 doctrus run frontend:build          # Run specific workspace task
 doctrus run test --parallel 3       # Run with parallelism
 doctrus run deploy --force          # Force rebuild

@@ -129,8 +129,8 @@ func (c *Config) validate() error {
 		}
 
 		for taskName, task := range workspace.Tasks {
-			if len(task.Command) == 0 {
-				return fmt.Errorf("workspace %s, task %s: command is required", name, taskName)
+			if len(task.Command) == 0 && len(task.DependsOn) == 0 {
+				return fmt.Errorf("workspace %s, task %s: command is required unless task has dependencies (compound task)", name, taskName)
 			}
 		}
 	}

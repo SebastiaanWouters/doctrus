@@ -98,20 +98,29 @@ func (m *Manager) ResolveDependencies(workspaceName, taskName string) ([]*TaskEx
 
 	var executions []*TaskExecution
 	visited := make(map[string]bool)
+	processed := make(map[string]bool)
 	
-	if err := m.resolveDependenciesRecursive(workspaceName, taskName, &executions, visited); err != nil {
+	if err := m.resolveDependenciesRecursive(workspaceName, taskName, &executions, visited, processed); err != nil {
 		return nil, err
 	}
 
 	return executions, nil
 }
 
-func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, executions *[]*TaskExecution, visited map[string]bool) error {
+func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, executions *[]*TaskExecution, visited map[string]bool, processed map[string]bool) error {
 	key := fmt.Sprintf("%s:%s", workspaceName, taskName)
+	
+	// If already processed, skip to avoid duplicates
+	if processed[key] {
+		return nil
+	}
+	
+	// Check for circular dependencies
 	if visited[key] {
 		return fmt.Errorf("circular dependency detected: %s", key)
 	}
 	visited[key] = true
+	defer delete(visited, key) // Clear after processing to allow diamond dependencies
 
 	task, exists := m.config.GetTask(workspaceName, taskName)
 	if !exists {
@@ -132,7 +141,7 @@ func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, e
 			return fmt.Errorf("invalid dependency format: %s", dep)
 		}
 
-		if err := m.resolveDependenciesRecursive(depWorkspace, depTask, executions, visited); err != nil {
+		if err := m.resolveDependenciesRecursive(depWorkspace, depTask, executions, visited, processed); err != nil {
 			return err
 		}
 	}
@@ -143,6 +152,7 @@ func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, e
 	}
 
 	*executions = append(*executions, execution)
+	processed[key] = true
 	return nil
 }
 

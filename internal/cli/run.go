@@ -109,6 +109,19 @@ func (c *CLI) runTaskInWorkspace(ctx context.Context, workspaceName, taskName st
 func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecution) error {
 	taskKey := fmt.Sprintf("%s:%s", execution.WorkspaceName, execution.TaskName)
 	
+	// Check if this is a compound task (no command, only dependencies)
+	isCompoundTask := len(execution.Task.Command) == 0
+	
+	if isCompoundTask {
+		fmt.Printf("▶ Compound task %s (dependencies only)", taskKey)
+		if verbose {
+			fmt.Printf(" in %s", execution.AbsPath)
+		}
+		fmt.Println()
+		fmt.Printf("  ✓ Dependencies completed\n")
+		return nil
+	}
+
 	fmt.Printf("▶ Running %s", taskKey)
 	if verbose {
 		fmt.Printf(" in %s", execution.AbsPath)
