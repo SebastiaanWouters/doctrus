@@ -70,12 +70,20 @@ func (c *CLI) runSingleTask(ctx context.Context, taskSpec string) error {
 		if len(found) == 0 {
 			return fmt.Errorf("task %s not found in any workspace", taskName)
 		}
-		if len(found) > 1 {
-			return fmt.Errorf("task %s found in multiple workspaces: %s", taskName, strings.Join(found, ", "))
+		
+		// Run task in all workspaces where it's found
+		for _, ws := range found {
+			if err := c.runTaskInWorkspace(ctx, ws, taskName); err != nil {
+				return err
+			}
 		}
-		workspaceName = found[0]
+		return nil
 	}
 
+	return c.runTaskInWorkspace(ctx, workspaceName, taskName)
+}
+
+func (c *CLI) runTaskInWorkspace(ctx context.Context, workspaceName, taskName string) error {
 	executions, err := c.workspace.ResolveDependencies(workspaceName, taskName)
 	if err != nil {
 		return fmt.Errorf("failed to resolve dependencies: %w", err)
