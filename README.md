@@ -240,6 +240,41 @@ doctrus run full-build  # Runs in all workspaces that have it
 - **cache**: Enable/disable caching (default: false)
 - **env**: Task-specific environment variables
 
+#### Input/Output Patterns & Caching
+
+**Inputs** define files that the task depends on:
+- Changes to input files trigger task re-execution
+- Supports glob patterns: `src/**/*`, `package*.json`, etc.
+- SHA256 hashes are computed for change detection
+
+**Outputs** define files that the task produces:
+- Used to verify task completion
+- If output files are missing, task will re-run
+- Supports same glob patterns as inputs
+
+**Cache** enables intelligent task skipping:
+- When `cache: true`, Doctrus tracks input changes
+- If inputs haven't changed and outputs exist, task is skipped
+- Dramatically speeds up development workflows
+- Can be overridden with `--force` or `--skip-cache` flags
+
+**Example with caching:**
+```yaml
+tasks:
+  install:
+    command: ["npm", "install"]
+    inputs: ["package.json", "package-lock.json"]  # Watch for dependency changes
+    outputs: ["node_modules/**/*"]                 # Verify installation
+    cache: true                                    # Enable caching
+
+  build:
+    command: ["npm", "run", "build"]
+    depends_on: ["install"]
+    inputs: ["src/**/*", "public/**/*"]           # Watch source files
+    outputs: ["dist/**/*"]                        # Verify build output
+    cache: true                                   # Enable caching
+```
+
 #### Compound Tasks
 
 Tasks without a command that only exist to orchestrate dependencies:
