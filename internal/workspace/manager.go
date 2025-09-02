@@ -96,25 +96,175 @@ func (m *Manager) ResolveDependencies(workspaceName, taskName string) ([]*TaskEx
 		return nil, fmt.Errorf("task %s not found in workspace %s", taskName, workspaceName)
 	}
 
-	var executions []*TaskExecution
-	visited := make(map[string]bool)
-	processed := make(map[string]bool)
-	
-	if err := m.resolveDependenciesRecursive(workspaceName, taskName, &executions, visited, processed); err != nil {
+	// Build dependency graph
+	graph, indegrees, err := m.buildDependencyGraph(workspaceName, taskName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform topological sort using Kahn's algorithm
+	executions, err := m.topologicalSort(graph, indegrees)
+	if err != nil {
 		return nil, err
 	}
 
 	return executions, nil
 }
 
+// buildDependencyGraph constructs a dependency graph for the given task.
+// Uses BFS traversal to discover all dependencies and builds:
+// - Adjacency list: maps each task to its dependents (tasks that depend on it)
+// - Indegree map: counts how many dependencies each task has
+// This enables efficient topological sorting with Kahn's algorithm.
+func (m *Manager) buildDependencyGraph(workspaceName, taskName string) (map[string][]string, map[string]int, error) {
+	graph := make(map[string][]string) // task -> list of tasks that depend on it
+	indegrees := make(map[string]int)  // task -> number of dependencies
+	visited := make(map[string]bool)   // to avoid processing the same task multiple times
+
+	// Start with the target task
+	queue := []string{fmt.Sprintf("%s:%s", workspaceName, taskName)}
+
+	for len(queue) > 0 {
+		currentKey := queue[0]
+		queue = queue[1:]
+
+		if visited[currentKey] {
+			continue
+		}
+		visited[currentKey] = true
+
+		// Parse the current task key
+		parts := strings.Split(currentKey, ":")
+		if len(parts) != 2 {
+			return nil, nil, fmt.Errorf("invalid task key format: %s", currentKey)
+		}
+		currWorkspace, currTask := parts[0], parts[1]
+
+		// Get the task definition
+		task, exists := m.config.GetTask(currWorkspace, currTask)
+		if !exists {
+			return nil, nil, fmt.Errorf("task %s not found in workspace %s", currTask, currWorkspace)
+		}
+
+		// Initialize indegree for this task if not already done
+		if _, exists := indegrees[currentKey]; !exists {
+			indegrees[currentKey] = 0
+		}
+
+		// Process dependencies
+		for _, dep := range task.DependsOn {
+			var depWorkspace, depTask string
+
+			// Parse dependency specification
+			depParts := strings.Split(dep, ":")
+			if len(depParts) == 1 {
+				// Same workspace dependency
+				depWorkspace = currWorkspace
+				depTask = depParts[0]
+			} else if len(depParts) == 2 {
+				// Cross-workspace dependency
+				depWorkspace = depParts[0]
+				depTask = depParts[1]
+			} else {
+				return nil, nil, fmt.Errorf("invalid dependency format: %s", dep)
+			}
+
+			depKey := fmt.Sprintf("%s:%s", depWorkspace, depTask)
+
+			// Verify dependency exists
+			if _, exists := m.config.GetTask(depWorkspace, depTask); !exists {
+				return nil, nil, fmt.Errorf("dependency %s not found", depKey)
+			}
+
+			// Add edge: dependency -> current task (dependency must run before current)
+			graph[depKey] = append(graph[depKey], currentKey)
+
+			// Increment indegree of current task
+			indegrees[currentKey]++
+
+			// Add dependency to queue if not visited
+			if !visited[depKey] {
+				queue = append(queue, depKey)
+			}
+		}
+	}
+
+	return graph, indegrees, nil
+}
+
+// topologicalSort performs topological sorting using Kahn's algorithm.
+// This algorithm ensures:
+// 1. Tasks are executed in dependency order (dependencies first)
+// 2. Each task executes exactly once (handles diamond dependencies)
+// 3. Circular dependencies are detected and reported as errors
+//
+// Algorithm:
+// - Start with tasks that have no dependencies (indegree 0)
+// - Process tasks in order, reducing indegree of their dependents
+// - Tasks become available when their indegree reaches 0
+// - If cycles exist, some tasks will never reach indegree 0
+func (m *Manager) topologicalSort(graph map[string][]string, indegrees map[string]int) ([]*TaskExecution, error) {
+	var result []*TaskExecution
+	queue := make([]string, 0)
+
+	// Find all tasks with no dependencies (indegree 0)
+	for task, degree := range indegrees {
+		if degree == 0 {
+			queue = append(queue, task)
+		}
+	}
+
+	// Process queue
+	processedCount := 0
+	totalTasks := len(indegrees)
+
+	for len(queue) > 0 {
+		// Sort queue for deterministic ordering
+		sort.Strings(queue)
+
+		// Dequeue first task
+		currentKey := queue[0]
+		queue = queue[1:]
+
+		// Create task execution
+		parts := strings.Split(currentKey, ":")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid task key: %s", currentKey)
+		}
+
+		execution, err := m.ResolveTaskExecution(parts[0], parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve task execution for %s: %w", currentKey, err)
+		}
+
+		result = append(result, execution)
+		processedCount++
+
+		// Update indegrees of dependent tasks
+		for _, dependent := range graph[currentKey] {
+			indegrees[dependent]--
+			if indegrees[dependent] == 0 {
+				queue = append(queue, dependent)
+			}
+		}
+	}
+
+	// Check for cycles
+	if processedCount != totalTasks {
+		return nil, fmt.Errorf("circular dependency detected in dependency graph")
+	}
+
+	return result, nil
+}
+
 func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, executions *[]*TaskExecution, visited map[string]bool, processed map[string]bool) error {
 	key := fmt.Sprintf("%s:%s", workspaceName, taskName)
-	
+
 	// If already processed, skip to avoid duplicates
 	if processed[key] {
 		return nil
 	}
-	
+
 	// Check for circular dependencies
 	if visited[key] {
 		return fmt.Errorf("circular dependency detected: %s", key)
@@ -130,7 +280,7 @@ func (m *Manager) resolveDependenciesRecursive(workspaceName, taskName string, e
 	for _, dep := range task.DependsOn {
 		parts := strings.Split(dep, ":")
 		var depWorkspace, depTask string
-		
+
 		if len(parts) == 1 {
 			depWorkspace = workspaceName
 			depTask = parts[0]
