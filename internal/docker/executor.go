@@ -69,6 +69,13 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		"-T",
 	}
 
+	// Mount cache directory if it exists
+	cacheDir := e.getCacheDir()
+	if _, err := os.Stat(cacheDir); err == nil {
+		// Mount cache directory to same path inside container
+		args = append(args, "-v", fmt.Sprintf("%s:%s", cacheDir, cacheDir))
+	}
+
 	env := e.buildEnvVars(execution)
 	for key, value := range env {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
@@ -179,8 +186,6 @@ func (e *Executor) GetRunningContainers() ([]string, error) {
 
 	return containers, nil
 }
-
-
 
 func (e *Executor) getCacheDir() string {
 	// Cache directory is now relative to the working directory
