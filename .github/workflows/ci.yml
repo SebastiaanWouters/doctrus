@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run tests
+      run: go test ./... -v -race -coverprofile=coverage.out
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+
+  build:
+    name: Build binaries
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            filename: doctrus-linux-amd64
+          - os: linux
+            arch: arm64
+            filename: doctrus-linux-arm64
+          - os: darwin
+            arch: amd64
+            filename: doctrus-darwin-amd64
+          - os: darwin
+            arch: arm64
+            filename: doctrus-darwin-arm64
+          - os: windows
+            arch: amd64
+            filename: doctrus-windows-amd64.exe
+          - os: windows
+            arch: arm
+            filename: doctrus-windows-arm.exe
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+      run: |
+        VERSION=${{ github.ref_name }}
+        if [[ $VERSION == refs/tags/* ]]; then
+          VERSION=${VERSION#refs/tags/}
+        else
+          VERSION="dev-${{ github.sha }}"
+        fi
+
+        go build \
+          -ldflags "-X main.version=${VERSION} -s -w" \
+          -o ${{ matrix.filename }} \
+          .
+
+    - name: Generate checksum
+      run: sha256sum ${{ matrix.filename }} > ${{ matrix.filename }}.sha256
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.filename }}
+        path: |
+          ${{ matrix.filename }}
+          ${{ matrix.filename }}.sha256
