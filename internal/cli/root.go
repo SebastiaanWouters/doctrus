@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	
+
 	"doctrus/internal/cache"
 	"doctrus/internal/config"
 	"doctrus/internal/deps"
@@ -47,7 +47,12 @@ func newCLI() (*CLI, error) {
 	workspaceManager := workspace.NewManager(cfg, basePath)
 	executor := docker.NewExecutor(cfg, basePath)
 	tracker := deps.NewTracker(basePath)
-	cacheManager := cache.NewManager(cacheDir, basePath)
+
+	// Resolve cache directory
+	if cacheDir == "" {
+		cacheDir = filepath.Join(basePath, ".doctrus", "cache")
+	}
+	cacheManager := cache.NewManager(cacheDir)
 
 	if err := workspaceManager.ValidateWorkspaces(); err != nil {
 		return nil, fmt.Errorf("workspace validation failed: %w", err)

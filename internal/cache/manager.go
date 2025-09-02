@@ -13,33 +13,43 @@ import (
 
 type Manager struct {
 	cacheDir string
-	basePath string
 }
 
 type CacheEntry struct {
-	TaskKey   string           `json:"task_key"`
-	State     *deps.TaskState  `json:"state"`
-	CreatedAt time.Time        `json:"created_at"`
-	TTL       time.Duration    `json:"ttl,omitempty"`
+	TaskKey   string          `json:"task_key"`
+	State     *deps.TaskState `json:"state"`
+	CreatedAt time.Time       `json:"created_at"`
+	TTL       time.Duration   `json:"ttl,omitempty"`
 }
 
-func NewManager(cacheDir string, basePath string) *Manager {
+// NewManager creates a new cache manager with the specified cache directory.
+// If cacheDir is empty, it will use the default cache directory.
+// The default location is determined by:
+// 1. DOCTRUS_CACHE_DIR environment variable (if set)
+// 2. ~/.doctrus/cache (user home directory)
+// 3. /tmp/doctrus/cache (fallback)
+func NewManager(cacheDir string) *Manager {
 	if cacheDir == "" {
 		// Check if running in Docker container with custom cache dir
 		if envCacheDir := os.Getenv("DOCTRUS_CACHE_DIR"); envCacheDir != "" {
 			cacheDir = envCacheDir
-		} else if basePath != "" {
-			// Use base path (where doctrus.yml is) for cache directory
-			cacheDir = filepath.Join(basePath, ".doctrus", "cache")
 		} else {
-			// Fallback to current working directory
-			cwd, _ := os.Getwd()
-			cacheDir = filepath.Join(cwd, ".doctrus", "cache")
+			// Fallback to user home directory
+			if homeDir, err := os.UserHomeDir(); err == nil {
+				cacheDir = filepath.Join(homeDir, ".doctrus", "cache")
+			} else {
+				// Last resort fallback to current working directory
+				if cwd, err := os.Getwd(); err == nil {
+					cacheDir = filepath.Join(cwd, ".doctrus", "cache")
+				} else {
+					// Absolute fallback
+					cacheDir = filepath.Join(os.TempDir(), "doctrus", "cache")
+				}
+			}
 		}
 	}
 	return &Manager{
 		cacheDir: cacheDir,
-		basePath: basePath,
 	}
 }
 
@@ -49,7 +59,7 @@ func (m *Manager) Initialize() error {
 
 func (m *Manager) Get(taskKey string) (*deps.TaskState, error) {
 	cachePath := m.getCachePath(taskKey)
-	
+
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -119,7 +129,7 @@ func (m *Manager) Clear() error {
 		if entry.IsDir() {
 			continue
 		}
-		
+
 		filePath := filepath.Join(m.cacheDir, entry.Name())
 		if err := os.Remove(filePath); err != nil {
 			return fmt.Errorf("failed to remove cache file %s: %w", filePath, err)
