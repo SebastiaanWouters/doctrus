@@ -17,17 +17,43 @@ A powerful monorepo task runner with Docker Compose integration, intelligent cac
 
 ### Installation
 
-**Linux/WSL:**
+#### Option 1: Automated Installation (Recommended)
+
+**Linux/macOS:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/SebastiaanWouters/doctrus/main/install.sh | bash
 ```
 
-**Manual Installation:**
+#### Option 2: Download Pre-built Binaries
+
+Download the latest release from [GitHub Releases](https://github.com/SebastiaanWouters/doctrus/releases).
+
+**Available platforms:**
+- **Linux**: `doctrus-linux-amd64` (x86_64), `doctrus-linux-arm64` (ARM64)
+- **macOS**: `doctrus-darwin-amd64` (Intel), `doctrus-darwin-arm64` (Apple Silicon)
+- **Windows**: `doctrus-windows-amd64.exe` (x86_64), `doctrus-windows-arm.exe` (ARM)
+
+**Installation example:**
 ```bash
-# Download the binary for your platform
+# Linux (x86_64)
 wget https://github.com/SebastiaanWouters/doctrus/releases/latest/download/doctrus-linux-amd64
 chmod +x doctrus-linux-amd64
 sudo mv doctrus-linux-amd64 /usr/local/bin/doctrus
+
+# macOS (Intel)
+curl -L https://github.com/SebastiaanWouters/doctrus/releases/latest/download/doctrus-darwin-amd64 -o doctrus
+chmod +x doctrus
+sudo mv doctrus /usr/local/bin/
+
+# Windows: Download doctrus-windows-amd64.exe and add to PATH
+```
+
+#### Option 3: Build from Source
+
+```bash
+git clone https://github.com/SebastiaanWouters/doctrus.git
+cd doctrus
+go build -o doctrus .
 ```
 
 ### Initialize a Project
@@ -564,6 +590,46 @@ doctrus validate             # Check Docker integration
 doctrus list -v              # Show task details and dependencies
 doctrus run --dry-run task   # Preview execution order
 ```
+
+## CI/CD & Releases
+
+Doctrus uses GitHub Actions for automated testing, building, and releasing:
+
+### Automated Workflows
+
+- **Testing**: Runs on every push to `main` branch
+  - Unit tests with race detection
+  - Code coverage reporting
+  - Multi-platform compatibility checks
+
+- **Binary Building**: Triggers on release creation
+  - Cross-compiles for 6 platforms (Linux, macOS, Windows × x86_64/ARM64/ARM)
+  - Generates SHA256 checksums
+  - Optimized binary sizes with `-s -w` flags
+
+- **Release Automation**: Automatically uploads binaries to GitHub Releases
+  - Creates `.tar.gz` archives for Unix systems
+  - Creates `.zip` archives for Windows
+  - Includes checksum files for verification
+
+### Release Process
+
+1. **Create Git Tag**: `git tag -a v1.0.0 -m "Release v1.0.0"`
+2. **Push Tag**: `git push origin v1.0.0`
+3. **GitHub Release**: Go to Releases → Create new release
+4. **Automated Build**: GitHub Actions builds and uploads binaries automatically
+5. **Download Ready**: Users can download platform-specific binaries immediately
+
+### Supported Platforms
+
+| OS | Architecture | Format | Status |
+|----|-------------|--------|--------|
+| Linux | x86_64 | tar.gz | ✅ Automated |
+| Linux | ARM64 | tar.gz | ✅ Automated |
+| macOS | x86_64 | tar.gz | ✅ Automated |
+| macOS | ARM64 | tar.gz | ✅ Automated |
+| Windows | x86_64 | zip | ✅ Automated |
+| Windows | ARM | zip | ✅ Automated |
 
 ## Contributing
 

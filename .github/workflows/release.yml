@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [published]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Run tests
+      run: go test ./... -v -race -coverprofile=coverage.out
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+
+  build:
+    name: Build binaries
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            filename: doctrus-linux-amd64
+          - os: linux
+            arch: arm64
+            filename: doctrus-linux-arm64
+          - os: darwin
+            arch: amd64
+            filename: doctrus-darwin-amd64
+          - os: darwin
+            arch: arm64
+            filename: doctrus-darwin-arm64
+          - os: windows
+            arch: amd64
+            filename: doctrus-windows-amd64.exe
+          - os: windows
+            arch: arm
+            filename: doctrus-windows-arm.exe
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+      run: |
+        VERSION=${{ github.ref_name }}
+        if [[ $VERSION == refs/tags/* ]]; then
+          VERSION=${VERSION#refs/tags/}
+        else
+          VERSION="dev-${{ github.sha }}"
+        fi
+        
+        go build \
+          -ldflags "-X main.version=${VERSION} -s -w" \
+          -o ${{ matrix.filename }} \
+          .
+    
+    - name: Generate checksum
+      run: sha256sum ${{ matrix.filename }} > ${{ matrix.filename }}.sha256
+    
+    - name: Upload binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.filename }}
+        path: |
+          ${{ matrix.filename }}
+          ${{ matrix.filename }}.sha256
+
+  release:
+    name: Create release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./artifacts
+    
+    - name: Display structure of downloaded files
+      run: ls -la ./artifacts/
+    
+    - name: Create release archives
+      run: |
+        cd ./artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            cd "$dir"
+            # Create tar.gz for Unix binaries, zip for Windows
+            if [[ $dir == *"windows"* ]]; then
+              zip -r "../${dir%/}.zip" .
+            else
+              tar -czf "../${dir%/}.tar.gz" .
+            fi
+            cd ..
+          fi
+        done
+    
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./artifacts/*.tar.gz
+        files: ./artifacts/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish to package registries
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Run GoReleaser (if configured)
+      run: |
+        # Placeholder for GoReleaser or other publishing tools
+        echo "Publishing to package registries..."
+        # Add GoReleaser configuration and commands here when ready
