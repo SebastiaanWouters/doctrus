@@ -404,7 +404,7 @@ Doctrus integrates with Docker Compose to run tasks in containers:
 2. **Working Directory**: Uses the container's default working directory from docker-compose.yml
 3. **Environment**: Environment variables are passed to containers
 4. **Networking**: Uses Docker Compose networking
-5. **Cache Mounting**: Cache directory is automatically mounted into containers for shared caching
+5. **Running Containers Required**: Containers must be running before executing tasks in them
 
 ### Example docker-compose.yml
 
@@ -468,20 +468,16 @@ Doctrus uses content-based caching to skip unnecessary task executions:
 
 **Cache Storage**: `{project-root}/.doctrus/cache/` (where project-root contains doctrus.yml)
 
-### Cache Directory in Containers
+### Cache Architecture
 
-When tasks are executed inside Docker containers, Doctrus automatically:
+Doctrus manages caching at the host level:
 
-1. **Mounts the cache directory** from host to container at the same path
-2. **Sets `DOCTRUS_CACHE_DIR` environment variable** pointing to the mounted cache
-3. **Enables shared caching** between host and container executions
+1. **Host-managed cache**: Doctrus runs on the host and manages all caching decisions
+2. **Task execution agnostic**: Tasks don't directly interact with the cache files
+3. **Cross-environment consistency**: Cache works the same whether tasks run locally or in containers
+4. **Environment variable**: `DOCTRUS_CACHE_DIR` is set for informational purposes
 
-This allows containerized tasks to:
-- Access cached build artifacts from previous runs
-- Write cache entries that persist across executions
-- Share cache with tasks running on the host
-
-**Note**: The cache directory is only mounted if it exists on the host.
+**Note**: The cache is managed by Doctrus itself, not by the individual tasks.
 
 ## Dependency Resolution
 

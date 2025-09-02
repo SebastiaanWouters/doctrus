@@ -61,19 +61,21 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		}
 	}
 
-	// Always use exec for existing containers
+	// Check if container is running before attempting to exec
+	if !e.isContainerRunning(composeFile, containerName) {
+		return &ExecutionResult{
+			ExitCode: 1,
+			Error: fmt.Errorf("container '%s' is not running\n\nTo start containers, run:\n  docker compose -f %s up -d %s\n\nOr start all containers:\n  docker compose -f %s up -d",
+				containerName, composeFile, containerName, composeFile),
+		}
+	}
+
+	// Use exec for running containers
 	args := []string{
 		"compose",
 		"-f", composeFile,
 		"exec",
 		"-T",
-	}
-
-	// Mount cache directory if it exists
-	cacheDir := e.getCacheDir()
-	if _, err := os.Stat(cacheDir); err == nil {
-		// Mount cache directory to same path inside container
-		args = append(args, "-v", fmt.Sprintf("%s:%s", cacheDir, cacheDir))
 	}
 
 	env := e.buildEnvVars(execution)
@@ -145,13 +147,6 @@ func (e *Executor) buildEnvVars(execution *workspace.TaskExecution) map[string]s
 		env[key] = value
 	}
 
-	// Set cache directory relative to working directory
-	effectiveContainer := e.config.GetEffectiveContainer(execution.WorkspaceName, execution.TaskName)
-	if effectiveContainer != "" {
-		cacheDir := e.getCacheDir()
-		env["DOCTRUS_CACHE_DIR"] = cacheDir
-	}
-
 	return env
 }
 
@@ -187,7 +182,20 @@ func (e *Executor) GetRunningContainers() ([]string, error) {
 	return containers, nil
 }
 
-func (e *Executor) getCacheDir() string {
-	// Cache directory is now relative to the working directory
-	return filepath.Join(e.workingDir, ".doctrus", "cache")
+func (e *Executor) isContainerRunning(composeFile, containerName string) bool {
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "ps", "--format", "json", containerName)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// Parse the JSON output to check if container is running
+	outputStr := strings.TrimSpace(string(output))
+	if outputStr == "" {
+		return false
+	}
+
+	// Simple check: if we got output, assume container exists and is running
+	// The docker compose ps command returns info for running containers
+	return true
 }
