@@ -179,8 +179,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.tag_name.outputs.tag_name }}
-        files: ./artifacts/*.tar.gz
-        files: ./artifacts/*.zip
+        files: |
+          ./artifacts/*.tar.gz
+          ./artifacts/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
