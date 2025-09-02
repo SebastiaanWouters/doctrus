@@ -69,7 +69,7 @@ func TestConfigValidation(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errMsg:  "workspace test, task build: command is required",
+			errMsg:  "workspace test, task build: command is required unless task has dependencies (compound task)",
 		},
 		{
 			name: "valid config",
@@ -204,7 +204,7 @@ workspaces:
 				t.Fatalf("Failed to write test config file: %v", err)
 			}
 
-			config, err := Load(configFile)
+			config, _, err := Load(configFile)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Load() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -218,7 +218,7 @@ workspaces:
 }
 
 func TestConfigLoadNonExistentFile(t *testing.T) {
-	_, err := Load("/non/existent/file.yml")
+	_, _, err := Load("/non/existent/file.yml")
 	if err == nil {
 		t.Error("Load() should return error for non-existent file")
 	}
@@ -382,10 +382,10 @@ func TestGetEffectiveContainer(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		workspaceName      string
-		taskName           string
-		expectedContainer  string
+		name              string
+		workspaceName     string
+		taskName          string
+		expectedContainer string
 	}{
 		{
 			name:              "workspace container used when no task override",
@@ -466,10 +466,10 @@ func TestGetEffectiveDockerConfig(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		workspaceName      string
-		taskName           string
-		expectedCompose    string
+		name            string
+		workspaceName   string
+		taskName        string
+		expectedCompose string
 	}{
 		{
 			name:            "uses global docker config by default",

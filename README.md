@@ -6,10 +6,12 @@ A powerful monorepo task runner with Docker Compose integration, intelligent cac
 
 - 🏗️ **Monorepo Support**: Manage multiple workspaces from a single configuration
 - 🐳 **Docker Integration**: Run tasks inside Docker containers via Docker Compose
-- 📦 **Smart Caching**: Skip tasks when inputs haven't changed
-- 🔄 **Dependency Tracking**: Automatic dependency resolution and execution ordering  
-- ⚡ **Performance**: Built in Go for speed and reliability
-- 🎯 **Flexible**: Works with npm, composer, and any command-line tools
+- 📦 **Smart Caching**: Skip tasks when inputs haven't changed using SHA256 hashing
+- 🔄 **Dependency Tracking**: Automatic dependency resolution with diamond dependency support
+- ⚡ **Performance**: Built in Go for speed and reliability with efficient topological sorting
+- 🎯 **Flexible**: Works with npm, composer, Go, and any command-line tools
+- 🔗 **Cross-workspace Dependencies**: Tasks can depend on tasks in other workspaces
+- 🔄 **Efficient Execution**: Each dependency executes only once, even in complex dependency graphs
 
 ## Quick Start
 
@@ -465,10 +467,33 @@ Doctrus uses content-based caching to skip unnecessary task executions:
 
 **Cache Storage**: `~/.doctrus/cache/` (configurable with `--cache-dir`)
 
+## Dependency Resolution
+
+Doctrus uses an efficient graph-based algorithm to resolve task dependencies:
+
+### Algorithm Overview
+1. **Graph Construction**: Builds a directed acyclic graph (DAG) of task dependencies
+2. **Topological Sorting**: Uses Kahn's algorithm to determine execution order
+3. **Deduplication**: Each task executes only once, even with multiple dependents
+4. **Cycle Detection**: Prevents infinite loops by detecting circular dependencies
+
+### Supported Patterns
+- **Simple chains**: `A → B → C`
+- **Diamond dependencies**: `A → B,C → D` (D executes only once)
+- **Cross-workspace**: `frontend:build → backend:test`
+- **Compound tasks**: Tasks with only dependencies (no commands)
+
+### Execution Order
+Tasks are executed in dependency order:
+```bash
+# For: frontend:build → backend:compile, backend:test → shared:setup
+# Execution: shared:setup → backend:compile → backend:test → frontend:build
+```
+
 ## Best Practices
 
 1. **Define Inputs/Outputs**: Accurate patterns improve cache effectiveness
-2. **Granular Tasks**: Smaller tasks = better caching and parallelism  
+2. **Granular Tasks**: Smaller tasks = better caching and parallelism
 3. **Use Dependencies**: Let Doctrus handle execution order
 4. **Environment Variables**: Keep environment-specific config separate
 5. **Docker Optimization**: Use .dockerignore to reduce context size
