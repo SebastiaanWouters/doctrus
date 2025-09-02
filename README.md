@@ -614,11 +614,21 @@ Doctrus uses GitHub Actions for automated testing, building, and releasing:
 
 ### Release Process
 
+**Fully Automated!** Just create and push a tag:
+
 1. **Create Git Tag**: `git tag -a v1.0.0 -m "Release v1.0.0"`
 2. **Push Tag**: `git push origin v1.0.0`
-3. **GitHub Release**: Go to Releases → Create new release
-4. **Automated Build**: GitHub Actions builds and uploads binaries automatically
-5. **Download Ready**: Users can download platform-specific binaries immediately
+3. **🎉 Done!** GitHub Actions automatically:
+   - Creates the GitHub release
+   - Builds binaries for all platforms
+   - Uploads binaries with checksums
+   - Users can download immediately
+
+**Supported Tag Formats:**
+- `v1.0.0` - Stable release
+- `v1.0.0-beta.1` - Beta release (marked as pre-release)
+- `v1.0.0-alpha.1` - Alpha release (marked as pre-release)
+- `v1.0.0-rc.1` - Release candidate (marked as pre-release)
 
 ### Supported Platforms
 
