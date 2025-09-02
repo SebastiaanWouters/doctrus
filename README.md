@@ -1,5 +1,8 @@
 # Doctrus
 
+[![CI/CD](https://github.com/SebastiaanWouters/doctrus/actions/workflows/release.yml/badge.svg)](https://github.com/SebastiaanWouters/doctrus/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/SebastiaanWouters/doctrus)](https://goreportcard.com/report/github.com/SebastiaanWouters/doctrus)
+
 A powerful monorepo task runner with Docker Compose integration, intelligent caching, and dependency tracking.
 
 ## Features
@@ -602,15 +605,18 @@ Doctrus uses GitHub Actions for automated testing, building, and releasing:
   - Code coverage reporting
   - Multi-platform compatibility checks
 
-- **Binary Building**: Triggers on release creation
+- **Automated Releases**: Triggers on tag creation (`git tag v1.0.0 && git push origin v1.0.0`)
+  - Automatically creates GitHub release
   - Cross-compiles for 6 platforms (Linux, macOS, Windows × x86_64/ARM64/ARM)
   - Generates SHA256 checksums
-  - Optimized binary sizes with `-s -w` flags
+  - Uploads all binaries as release assets
+  - Detects pre-releases from tag names (beta/alpha/rc)
 
-- **Release Automation**: Automatically uploads binaries to GitHub Releases
-  - Creates `.tar.gz` archives for Unix systems
-  - Creates `.zip` archives for Windows
-  - Includes checksum files for verification
+- **Release Assets**: Automatically generated
+  - `.tar.gz` archives for Unix systems (Linux/macOS)
+  - `.zip` archives for Windows
+  - SHA256 checksum files for all binaries
+  - Optimized binary sizes with `-s -w` flags
 
 ### Release Process
 
