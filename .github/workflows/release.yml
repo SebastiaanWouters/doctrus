@@ -8,46 +8,6 @@ on:
     types: [published]
 
 jobs:
-  # Create release when tag is pushed
-  create-release:
-    name: Create release
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-    steps:
-    - name: Get tag name
-      id: tag_name
-      run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
-        echo "Tag: ${TAG_NAME}"
-
-    - name: Create release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag_name.outputs.tag_name }}
-        release_name: Doctrus ${{ steps.tag_name.outputs.tag_name }}
-        body: |
-          ## 🚀 Doctrus ${{ steps.tag_name.outputs.tag_name }} Release
-
-          ### 📦 Downloads
-          Pre-built binaries are available for download below for all major platforms.
-
-          ### 🔧 Installation
-          Download the binary for your platform and add it to your PATH.
-
-          ### 📋 What's New
-          See the [changelog](https://github.com/SebastiaanWouters/doctrus/blob/main/CHANGELOG.md) for details.
-
-          ### 🤝 Feedback
-          Please report any issues or feature requests on [GitHub Issues](https://github.com/SebastiaanWouters/doctrus/issues).
-        draft: false
-        prerelease: ${{ contains(steps.tag_name.outputs.tag_name, 'beta') || contains(steps.tag_name.outputs.tag_name, 'alpha') || contains(steps.tag_name.outputs.tag_name, 'rc') }}
-
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -77,7 +37,7 @@ jobs:
 
   build:
     name: Build binaries
-    needs: [test, create-release]
+    needs: [test]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main')
     strategy:
@@ -139,8 +99,8 @@ jobs:
           ${{ matrix.filename }}.sha256
 
   release:
-    name: Upload release assets
-    needs: [create-release, build]
+    name: Create release and upload assets
+    needs: [build]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
 
@@ -155,10 +115,10 @@ jobs:
       uses: actions/download-artifact@v3
       with:
         path: ./artifacts
-    
+
     - name: Display structure of downloaded files
       run: ls -la ./artifacts/
-    
+
     - name: Create release archives
       run: |
         cd ./artifacts
@@ -174,11 +134,28 @@ jobs:
             cd ..
           fi
         done
-    
-    - name: Upload release assets
+
+    - name: Create release and upload assets
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.tag_name.outputs.tag_name }}
+        name: Doctrus ${{ steps.tag_name.outputs.tag_name }}
+        body: |
+          ## 🚀 Doctrus ${{ steps.tag_name.outputs.tag_name }} Release
+
+          ### 📦 Downloads
+          Pre-built binaries are available for download below for all major platforms.
+
+          ### 🔧 Installation
+          Download the binary for your platform and add it to your PATH.
+
+          ### 📋 What's New
+          See the [changelog](https://github.com/SebastiaanWouters/doctrus/blob/main/CHANGELOG.md) for details.
+
+          ### 🤝 Feedback
+          Please report any issues or feature requests on [GitHub Issues](https://github.com/SebastiaanWouters/doctrus/issues).
+        draft: false
+        prerelease: ${{ contains(steps.tag_name.outputs.tag_name, 'beta') || contains(steps.tag_name.outputs.tag_name, 'alpha') || contains(steps.tag_name.outputs.tag_name, 'rc') }}
         files: |
           ./artifacts/*.tar.gz
           ./artifacts/*.zip
