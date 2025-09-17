@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -144,8 +145,15 @@ func TestEnsurePreRunCommands(t *testing.T) {
 }
 
 func TestParallelCompoundRunsDependenciesConcurrently(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell sleep command not available on Windows")
+	}
+
 	// Use serial execution to avoid interference with global flags.
 	tempDir := t.TempDir()
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		t.Fatalf("failed to create workspace dir: %v", err)
+	}
 
 	cfg := &config.Config{
 		Version: "1.0",
@@ -170,14 +178,7 @@ func TestParallelCompoundRunsDependenciesConcurrently(t *testing.T) {
 
 	workspaceManager := workspace.NewManager(cfg, tempDir)
 	if err := workspaceManager.ValidateWorkspaces(); err != nil {
-		// Each task executes in tempDir; ensure directory exists before validation.
-		// Validation expects the path to exist.
-		if err := os.MkdirAll(tempDir, 0o755); err != nil {
-			t.Fatalf("failed to create workspace dir: %v", err)
-		}
-		if err := workspaceManager.ValidateWorkspaces(); err != nil {
-			t.Fatalf("ValidateWorkspaces() error = %v", err)
-		}
+		t.Fatalf("ValidateWorkspaces() error = %v", err)
 	}
 
 	cli := &CLI{
@@ -192,10 +193,24 @@ func TestParallelCompoundRunsDependenciesConcurrently(t *testing.T) {
 	ctx := context.Background()
 	runner := newTaskRunner(cli)
 
+	origForce := forceBuild
+	origSkip := skipCache
+	origDryRun := dryRun
+	origShowDiff := showDiff
+	origParallel := parallel
+	t.Cleanup(func() {
+		forceBuild = origForce
+		skipCache = origSkip
+		dryRun = origDryRun
+		showDiff = origShowDiff
+		parallel = origParallel
+	})
+
 	forceBuild = false
 	skipCache = false
 	dryRun = false
 	showDiff = false
+	parallel = 1
 
 	start := time.Now()
 	if err := cli.runTaskInWorkspace(ctx, runner, "app", "bundle"); err != nil {

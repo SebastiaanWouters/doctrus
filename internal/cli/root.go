@@ -19,6 +19,7 @@ var (
 	verbose    bool
 	dryRun     bool
 	cacheDir   string
+	runCmd     *cobra.Command
 )
 
 type CLI struct {
@@ -74,9 +75,27 @@ func newCLI() (*CLI, error) {
 var rootCmd = &cobra.Command{
 	Use:   "doctrus",
 	Short: "A powerful monorepo task runner with Docker support",
-	Long: `Doctrus is a monorepo management tool that helps you run tasks across
-multiple workspaces with Docker Compose integration, intelligent caching,
-and dependency tracking.`,
+	Long:  "Doctrus is a monorepo management tool that helps you run tasks across\nmultiple workspaces with Docker Compose integration, intelligent caching,\nand dependency tracking.",
+	Args:  cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return cmd.Help()
+		}
+
+		if runCmd == nil {
+			return fmt.Errorf("run command is not initialised")
+		}
+
+		if runCmd.Args != nil {
+			if err := runCmd.Args(runCmd, args); err != nil {
+				return err
+			}
+		}
+
+		runCmd.SetContext(cmd.Context())
+
+		return runCmd.RunE(runCmd, args)
+	},
 }
 
 func Execute() error {
@@ -89,11 +108,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Show what would be executed without running it")
 	rootCmd.PersistentFlags().StringVar(&cacheDir, "cache-dir", "", "Cache directory (default: ~/.doctrus/cache)")
 
+	runCmd = newRunCommand()
 	rootCmd.AddCommand(
-		newRunCommand(),
+		runCmd,
 		newListCommand(),
 		newCacheCommand(),
 		newValidateCommand(),
 		newInitCommand(),
 	)
+
+	rootCmd.Flags().AddFlagSet(runCmd.Flags())
 }

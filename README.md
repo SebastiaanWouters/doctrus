@@ -53,6 +53,9 @@ doctrus list
 # Run a specific task
 doctrus run frontend:build
 
+# Shorthand: run task without the `run` command
+doctrus frontend:build
+
 # Run task in all workspaces where it exists
 doctrus run test
 
@@ -134,6 +137,7 @@ Key task options:
 - `verbose` (default `true`): controls whether Doctrus prints the task's command stdout/stderr. Set it to `false` for especially noisy commands; use `doctrus run --verbose` to override at runtime.
 - `pre`: optional commands that execute once before any tasks fire during `doctrus run`, useful for provisioning directories or dependencies.
 - `parallel` (default `false`): available on compound tasks (those without a `command`). When set to `true`, Doctrus runs the task's immediate dependencies in parallel instead of sequentially.
+- You can invoke tasks directly without `run` (for example, `doctrus build`). Built-in commands like `doctrus validate` continue to take precedence, so tasks that reuse those names still require `doctrus run`.
 
 ## Multi-Workspace Task Execution
 

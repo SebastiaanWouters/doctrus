@@ -33,4 +33,5 @@
 - Use `pre` entries for repository-wide setup (e.g., `mkdir -p cache`) that must happen before any task executes; they run once per CLI invocation from the repo root.
 - Tasks accept `verbose: false` to suppress stdout/stderr in routine runs; `doctrus run --verbose` forces output when debugging.
 - Compound tasks (only `depends_on`) may set `parallel: true` to execute their dependencies concurrently; otherwise dependencies run sequentially.
+- Developers can call tasks without explicitly using the `run` subcommand (e.g., `doctrus lint`). Built-in commands still win conflicts, so a user-defined task named `validate` must be invoked with `doctrus run validate`.
 - Repository cache resides at `.doctrus/cache`; use `doctrus cache clear` or `doctrus run --force` after changing task inputs or outputs.
