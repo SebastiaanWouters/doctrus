@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -59,8 +60,10 @@ func runTask(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	runner := newTaskRunner(cli)
+
 	for _, taskSpec := range args {
-		if err := cli.runSingleTask(ctx, taskSpec); err != nil {
+		if err := cli.runSingleTask(ctx, runner, taskSpec); err != nil {
 			return fmt.Errorf("failed to run task %s: %w", taskSpec, err)
 		}
 	}
@@ -68,7 +71,7 @@ func runTask(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (c *CLI) runSingleTask(ctx context.Context, taskSpec string) error {
+func (c *CLI) runSingleTask(ctx context.Context, runner *taskRunner, taskSpec string) error {
 	workspaceName, taskName := parseTaskSpec(taskSpec)
 
 	if workspaceName == "" {
@@ -80,73 +83,60 @@ func (c *CLI) runSingleTask(ctx context.Context, taskSpec string) error {
 			return fmt.Errorf("task %s not found in any workspace", taskName)
 		}
 
-		// Run task in all workspaces where it's found
 		for _, ws := range found {
-			if err := c.runTaskInWorkspace(ctx, ws, taskName); err != nil {
+			if err := c.runTaskInWorkspace(ctx, runner, ws, taskName); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return c.runTaskInWorkspace(ctx, workspaceName, taskName)
+	return c.runTaskInWorkspace(ctx, runner, workspaceName, taskName)
 }
 
-func (c *CLI) runTaskInWorkspace(ctx context.Context, workspaceName, taskName string) error {
+func (c *CLI) runTaskInWorkspace(ctx context.Context, runner *taskRunner, workspaceName, taskName string) error {
 	executions, err := c.workspace.ResolveDependencies(workspaceName, taskName)
 	if err != nil {
 		return fmt.Errorf("failed to resolve dependencies: %w", err)
 	}
 
 	if verbose {
-		fmt.Printf("Resolved execution order:\n")
+		c.printf("Resolved execution order:\n")
 		for i, exec := range executions {
-			fmt.Printf("  %d. %s:%s\n", i+1, exec.WorkspaceName, exec.TaskName)
+			c.printf("  %d. %s:%s\n", i+1, exec.WorkspaceName, exec.TaskName)
 		}
-		fmt.Println()
+		c.printf("\n")
 	}
 
-	for _, execution := range executions {
-		if err := c.runExecution(ctx, execution); err != nil {
-			return fmt.Errorf("failed to execute %s:%s: %w", execution.WorkspaceName, execution.TaskName, err)
-		}
-	}
-
-	return nil
+	return runner.RunTask(ctx, workspaceName, taskName)
 }
 
 func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecution) error {
 	taskKey := fmt.Sprintf("%s:%s", execution.WorkspaceName, execution.TaskName)
 
-	// Check if this is a compound task (no command, only dependencies)
-	isCompoundTask := len(execution.Task.Command) == 0
-	taskVerbose := isTaskVerbose(execution.Task)
+	task := execution.Task
+	taskVerbose := isTaskVerbose(task)
 	detailedLogging := verbose || taskVerbose
 
-	if isCompoundTask {
-		fmt.Printf("▶ Compound task %s (dependencies only)", taskKey)
-		if detailedLogging {
-			fmt.Printf(" in %s", execution.AbsPath)
-		}
-		fmt.Println()
-		fmt.Printf("  ✓ Dependencies completed\n")
+	if len(task.Command) == 0 {
+		c.printCompoundTask(execution, detailedLogging, isTaskParallel(task))
 		return nil
 	}
 
-	fmt.Printf("▶ Running %s", taskKey)
+	header := fmt.Sprintf("▶ Running %s", taskKey)
 	if detailedLogging {
-		fmt.Printf(" in %s", execution.AbsPath)
+		header += fmt.Sprintf(" in %s", execution.AbsPath)
 	}
-	fmt.Println()
+	c.printf("%s\n", header)
 
 	var previousState *deps.TaskState
-	if !skipCache && execution.Task.Cache {
+	if !skipCache && task.Cache {
 		var err error
 		previousState, err = c.cache.Get(taskKey)
 		if err != nil && detailedLogging {
-			fmt.Printf("  Warning: failed to load cache: %v\n", err)
+			c.printf("  Warning: failed to load cache: %v\n", err)
 		} else if previousState != nil && detailedLogging {
-			fmt.Printf("  Cache found, checking for changes...\n")
+			c.printf("  Cache found, checking for changes...\n")
 		}
 	}
 
@@ -160,19 +150,19 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 	}
 
 	if !shouldRun {
-		fmt.Printf("  ✓ Cached (no changes detected)\n")
+		c.printf("  ✓ Cached (no changes detected)\n")
 		return nil
 	}
 
 	if showDiff && previousState != nil {
 		changes, err := c.tracker.GetChangedInputs(execution, previousState)
 		if err == nil && len(changes) > 0 {
-			fmt.Printf("  Changed inputs: %s\n", strings.Join(changes, ", "))
+			c.printf("  Changed inputs: %s\n", strings.Join(changes, ", "))
 		}
 	}
 
 	if dryRun {
-		fmt.Printf("  Would run: %s\n", strings.Join(execution.Task.Command, " "))
+		c.printf("  Would run: %s\n", strings.Join(task.Command, " "))
 		return nil
 	}
 
@@ -188,33 +178,33 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	if detailedLogging || !success {
 		if result.Stdout != "" {
-			fmt.Printf("  stdout:\n%s\n", indentOutput(result.Stdout))
+			c.printf("  stdout:\n%s\n", indentOutput(result.Stdout))
 		}
 		if result.Stderr != "" {
-			fmt.Printf("  stderr:\n%s\n", indentOutput(result.Stderr))
+			c.printf("  stderr:\n%s\n", indentOutput(result.Stderr))
 		}
 	}
 
 	if success {
-		fmt.Printf("  ✓ Executed successfully in %v\n", duration.Round(time.Millisecond))
+		c.printf("  ✓ Executed successfully in %v\n", duration.Round(time.Millisecond))
 	} else {
-		fmt.Printf("  ✗ Failed with exit code %d in %v\n", result.ExitCode, duration.Round(time.Millisecond))
+		c.printf("  ✗ Failed with exit code %d in %v\n", result.ExitCode, duration.Round(time.Millisecond))
 		return fmt.Errorf("task failed with exit code %d", result.ExitCode)
 	}
 
-	if execution.Task.Cache {
+	if task.Cache {
 		taskState, err := c.tracker.ComputeTaskState(execution, success)
 		if err != nil {
 			if detailedLogging {
-				fmt.Printf("  Warning: failed to compute task state: %v\n", err)
+				c.printf("  Warning: failed to compute task state: %v\n", err)
 			}
 		} else {
 			if err := c.cache.Set(taskKey, taskState, 0); err != nil {
 				if detailedLogging {
-					fmt.Printf("  Warning: failed to cache task state: %v\n", err)
+					c.printf("  Warning: failed to cache task state: %v\n", err)
 				}
 			} else if detailedLogging {
-				fmt.Printf("  Cache updated for future runs\n")
+				c.printf("  Cache updated for future runs\n")
 			}
 		}
 	}
@@ -222,11 +212,33 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 	return nil
 }
 
+func (c *CLI) printCompoundTask(execution *workspace.TaskExecution, detailed bool, isParallel bool) {
+	taskKey := fmt.Sprintf("%s:%s", execution.WorkspaceName, execution.TaskName)
+	mode := "dependencies only"
+	if isParallel {
+		mode = "parallel dependencies"
+	}
+
+	message := fmt.Sprintf("▶ Compound task %s (%s)", taskKey, mode)
+	if detailed {
+		message += fmt.Sprintf(" in %s", execution.AbsPath)
+	}
+	c.printf("%s\n", message)
+	c.printf("  ✓ Dependencies completed\n")
+}
+
 func isTaskVerbose(task *config.Task) bool {
 	if task == nil || task.Verbose == nil {
 		return true
 	}
 	return *task.Verbose
+}
+
+func isTaskParallel(task *config.Task) bool {
+	if task == nil || task.Parallel == nil {
+		return false
+	}
+	return *task.Parallel
 }
 
 func parseTaskSpec(taskSpec string) (string, string) {
@@ -286,11 +298,11 @@ func (c *CLI) ensurePreRunCommands(ctx context.Context) error {
 			workingDir = filepath.Join(c.basePath, workingDir)
 		}
 
-		fmt.Printf("▶ Pre-run %d/%d: %s", idx+1, len(c.config.Pre), cmdDisplay)
+		headline := fmt.Sprintf("▶ Pre-run %d/%d: %s", idx+1, len(c.config.Pre), cmdDisplay)
 		if detailedLogging {
-			fmt.Printf(" (dir %s)", workingDir)
+			headline += fmt.Sprintf(" (dir %s)", workingDir)
 		}
-		fmt.Println()
+		c.printf("%s\n", headline)
 
 		if len(pre.Command) == 0 {
 			return fmt.Errorf("pre[%d]: command is required", idx)
@@ -327,21 +339,166 @@ func (c *CLI) ensurePreRunCommands(ctx context.Context) error {
 
 		if detailedLogging || err != nil {
 			if stdout != "" {
-				fmt.Printf("  stdout:\n%s\n", indentOutput(stdout))
+				c.printf("  stdout:\n%s\n", indentOutput(stdout))
 			}
 			if stderr != "" {
-				fmt.Printf("  stderr:\n%s\n", indentOutput(stderr))
+				c.printf("  stderr:\n%s\n", indentOutput(stderr))
 			}
 		}
 
 		if err != nil {
-			fmt.Printf("  ✗ Failed with exit code %d in %v\n", exitCode, duration.Round(time.Millisecond))
+			c.printf("  ✗ Failed with exit code %d in %v\n", exitCode, duration.Round(time.Millisecond))
 			return fmt.Errorf("pre-run command %d failed: %w", idx+1, err)
 		}
 
-		fmt.Printf("  ✓ Completed in %v\n", duration.Round(time.Millisecond))
+		c.printf("  ✓ Completed in %v\n", duration.Round(time.Millisecond))
 	}
 
 	c.preRunExecuted = true
 	return nil
+}
+
+func (c *CLI) printf(format string, args ...interface{}) {
+	c.outputMu.Lock()
+	defer c.outputMu.Unlock()
+	fmt.Printf(format, args...)
+}
+
+type dependencySpec struct {
+	workspace string
+	task      string
+}
+
+type taskRunner struct {
+	cli    *CLI
+	mu     sync.Mutex
+	states map[string]*taskState
+}
+
+type taskState struct {
+	cond    *sync.Cond
+	running bool
+	done    bool
+	err     error
+}
+
+func newTaskRunner(cli *CLI) *taskRunner {
+	return &taskRunner{
+		cli:    cli,
+		states: make(map[string]*taskState),
+	}
+}
+
+func (r *taskRunner) RunTask(ctx context.Context, workspaceName, taskName string) error {
+	taskKey := fmt.Sprintf("%s:%s", workspaceName, taskName)
+
+	r.mu.Lock()
+	if state, exists := r.states[taskKey]; exists {
+		for state.running {
+			state.cond.Wait()
+		}
+		err := state.err
+		r.mu.Unlock()
+		return err
+	}
+
+	state := &taskState{}
+	state.cond = sync.NewCond(&r.mu)
+	state.running = true
+	r.states[taskKey] = state
+	r.mu.Unlock()
+
+	err := r.execute(ctx, workspaceName, taskName)
+
+	r.mu.Lock()
+	state.running = false
+	state.done = true
+	state.err = err
+	state.cond.Broadcast()
+	r.mu.Unlock()
+
+	return err
+}
+
+func (r *taskRunner) execute(ctx context.Context, workspaceName, taskName string) error {
+	execution, err := r.cli.workspace.ResolveTaskExecution(workspaceName, taskName)
+	if err != nil {
+		return err
+	}
+
+	deps, err := r.cli.collectDependencies(workspaceName, execution.Task)
+	if err != nil {
+		return err
+	}
+
+	if len(deps) > 0 {
+		if isParallelCompound(execution.Task) {
+			if err := r.runDependenciesParallel(ctx, deps); err != nil {
+				return err
+			}
+		} else {
+			for _, dep := range deps {
+				if err := r.RunTask(ctx, dep.workspace, dep.task); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return r.cli.runExecution(ctx, execution)
+}
+
+func (r *taskRunner) runDependenciesParallel(ctx context.Context, deps []dependencySpec) error {
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(deps))
+
+	for _, dep := range deps {
+		dep := dep
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := r.RunTask(ctx, dep.workspace, dep.task); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+		return nil
+	}
+}
+
+func (c *CLI) collectDependencies(currentWorkspace string, task *config.Task) ([]dependencySpec, error) {
+	var deps []dependencySpec
+
+	for _, dep := range task.DependsOn {
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
+
+		workspaceName := currentWorkspace
+		taskName := dep
+
+		parts := strings.Split(dep, ":")
+		if len(parts) == 2 {
+			workspaceName = parts[0]
+			taskName = parts[1]
+		} else if len(parts) > 2 {
+			return nil, fmt.Errorf("invalid dependency format: %s", dep)
+		}
+
+		deps = append(deps, dependencySpec{workspace: workspaceName, task: taskName})
+	}
+
+	return deps, nil
+}
+
+func isParallelCompound(task *config.Task) bool {
+	return len(task.Command) == 0 && isTaskParallel(task)
 }

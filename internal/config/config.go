@@ -33,6 +33,7 @@ type Task struct {
 	Container   *string           `yaml:"container,omitempty"`
 	Docker      *TaskDockerConfig `yaml:"docker,omitempty"`
 	Verbose     *bool             `yaml:"verbose,omitempty"`
+	Parallel    *bool             `yaml:"parallel,omitempty"`
 }
 
 type PreCommand struct {
@@ -141,6 +142,14 @@ func (c *Config) validate() error {
 		}
 
 		for taskName, task := range workspace.Tasks {
+			if task.Parallel != nil && *task.Parallel {
+				if len(task.Command) > 0 {
+					return fmt.Errorf("workspace %s, task %s: parallel is only supported for compound tasks without a command", name, taskName)
+				}
+				if len(task.DependsOn) == 0 {
+					return fmt.Errorf("workspace %s, task %s: parallel requires at least one dependency", name, taskName)
+				}
+			}
 			if len(task.Command) == 0 && len(task.DependsOn) == 0 {
 				return fmt.Errorf("workspace %s, task %s: command is required unless task has dependencies (compound task)", name, taskName)
 			}

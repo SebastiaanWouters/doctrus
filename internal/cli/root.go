@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -28,6 +29,7 @@ type CLI struct {
 	cache          *cache.Manager
 	basePath       string
 	preRunExecuted bool
+	outputMu       sync.Mutex
 }
 
 func newCLI() (*CLI, error) {

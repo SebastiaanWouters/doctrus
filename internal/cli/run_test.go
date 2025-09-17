@@ -5,8 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"doctrus/internal/cache"
 	"doctrus/internal/config"
+	"doctrus/internal/deps"
+	"doctrus/internal/docker"
+	"doctrus/internal/workspace"
 )
 
 func TestIsTaskVerbose(t *testing.T) {
@@ -46,6 +51,46 @@ func TestIsTaskVerbose(t *testing.T) {
 
 			if got := isTaskVerbose(tt.task); got != tt.want {
 				t.Fatalf("isTaskVerbose() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsTaskParallel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		task *config.Task
+		want bool
+	}{
+		{
+			name: "nil task",
+			task: nil,
+			want: false,
+		},
+		{
+			name: "default false",
+			task: &config.Task{},
+			want: false,
+		},
+		{
+			name: "explicit true",
+			task: &config.Task{Parallel: boolPtr(true)},
+			want: true,
+		},
+		{
+			name: "explicit false",
+			task: &config.Task{Parallel: boolPtr(false)},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isTaskParallel(tt.task); got != tt.want {
+				t.Fatalf("isTaskParallel() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -95,5 +140,70 @@ func TestEnsurePreRunCommands(t *testing.T) {
 	// Subsequent calls should be no-ops
 	if err := cli.ensurePreRunCommands(ctx); err != nil {
 		t.Fatalf("ensurePreRunCommands() second call error = %v", err)
+	}
+}
+
+func TestParallelCompoundRunsDependenciesConcurrently(t *testing.T) {
+	// Use serial execution to avoid interference with global flags.
+	tempDir := t.TempDir()
+
+	cfg := &config.Config{
+		Version: "1.0",
+		Workspaces: map[string]config.Workspace{
+			"app": {
+				Path: tempDir,
+				Tasks: map[string]config.Task{
+					"slowA": {
+						Command: []string{"sh", "-c", "sleep 0.3"},
+					},
+					"slowB": {
+						Command: []string{"sh", "-c", "sleep 0.3"},
+					},
+					"bundle": {
+						DependsOn: []string{"slowA", "slowB"},
+						Parallel:  boolPtr(true),
+					},
+				},
+			},
+		},
+	}
+
+	workspaceManager := workspace.NewManager(cfg, tempDir)
+	if err := workspaceManager.ValidateWorkspaces(); err != nil {
+		// Each task executes in tempDir; ensure directory exists before validation.
+		// Validation expects the path to exist.
+		if err := os.MkdirAll(tempDir, 0o755); err != nil {
+			t.Fatalf("failed to create workspace dir: %v", err)
+		}
+		if err := workspaceManager.ValidateWorkspaces(); err != nil {
+			t.Fatalf("ValidateWorkspaces() error = %v", err)
+		}
+	}
+
+	cli := &CLI{
+		config:    cfg,
+		workspace: workspaceManager,
+		executor:  docker.NewExecutor(cfg, tempDir),
+		tracker:   deps.NewTracker(tempDir),
+		cache:     cache.NewManager(filepath.Join(tempDir, ".doctrus", "cache")),
+		basePath:  tempDir,
+	}
+
+	ctx := context.Background()
+	runner := newTaskRunner(cli)
+
+	forceBuild = false
+	skipCache = false
+	dryRun = false
+	showDiff = false
+
+	start := time.Now()
+	if err := cli.runTaskInWorkspace(ctx, runner, "app", "bundle"); err != nil {
+		t.Fatalf("runTaskInWorkspace() error = %v", err)
+	}
+	duration := time.Since(start)
+
+	if duration > 450*time.Millisecond {
+		t.Fatalf("expected parallel execution to finish sooner, took %v", duration)
 	}
 }

@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func TestConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -70,6 +74,45 @@ func TestConfigValidation(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "workspace test, task build: command is required unless task has dependencies (compound task)",
+		},
+		{
+			name: "parallel requires commandless task",
+			config: Config{
+				Version: "1.0",
+				Workspaces: map[string]Workspace{
+					"test": {
+						Path: "./test",
+						Tasks: map[string]Task{
+							"build": {
+								Command:   []string{"echo", "build"},
+								DependsOn: []string{"lint"},
+								Parallel:  boolPtr(true),
+							},
+							"lint": {Command: []string{"echo", "lint"}},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "workspace test, task build: parallel is only supported for compound tasks without a command",
+		},
+		{
+			name: "parallel requires dependencies",
+			config: Config{
+				Version: "1.0",
+				Workspaces: map[string]Workspace{
+					"test": {
+						Path: "./test",
+						Tasks: map[string]Task{
+							"build": {
+								Parallel: boolPtr(true),
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "workspace test, task build: parallel requires at least one dependency",
 		},
 		{
 			name: "pre without command",

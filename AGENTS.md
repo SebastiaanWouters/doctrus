@@ -32,4 +32,5 @@
 - Workspace `path` is optional; leaving it blank executes commands from the directory containing `doctrus.yml` locally and from the container's default working directory. When set, Doctrus switches into it before task execution in both environments.
 - Use `pre` entries for repository-wide setup (e.g., `mkdir -p cache`) that must happen before any task executes; they run once per CLI invocation from the repo root.
 - Tasks accept `verbose: false` to suppress stdout/stderr in routine runs; `doctrus run --verbose` forces output when debugging.
+- Compound tasks (only `depends_on`) may set `parallel: true` to execute their dependencies concurrently; otherwise dependencies run sequentially.
 - Repository cache resides at `.doctrus/cache`; use `doctrus cache clear` or `doctrus run --force` after changing task inputs or outputs.
