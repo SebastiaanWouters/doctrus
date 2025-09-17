@@ -27,31 +27,7 @@ A powerful monorepo task runner with Docker Compose integration, intelligent cac
 curl -sSL https://raw.githubusercontent.com/SebastiaanWouters/doctrus/main/install.sh | bash
 ```
 
-#### Option 2: Download Pre-built Binaries
-
-Download the latest release from [GitHub Releases](https://github.com/SebastiaanWouters/doctrus/releases).
-
-**Available platforms:**
-- **Linux**: `doctrus-linux-amd64` (x86_64), `doctrus-linux-arm64` (ARM64)
-- **macOS**: `doctrus-darwin-amd64` (Intel), `doctrus-darwin-arm64` (Apple Silicon)
-- **Windows**: `doctrus-windows-amd64.exe` (x86_64), `doctrus-windows-arm.exe` (ARM)
-
-**Installation example:**
-```bash
-# Linux (x86_64)
-wget https://github.com/SebastiaanWouters/doctrus/releases/latest/download/doctrus-linux-amd64
-chmod +x doctrus-linux-amd64
-sudo mv doctrus-linux-amd64 /usr/local/bin/doctrus
-
-# macOS (Intel)
-curl -L https://github.com/SebastiaanWouters/doctrus/releases/latest/download/doctrus-darwin-amd64 -o doctrus
-chmod +x doctrus
-sudo mv doctrus /usr/local/bin/
-
-# Windows: Download doctrus-windows-amd64.exe and add to PATH
-```
-
-#### Option 3: Build from Source
+#### Option 2: Build from Source
 
 ```bash
 git clone https://github.com/SebastiaanWouters/doctrus.git
@@ -593,59 +569,6 @@ doctrus validate             # Check Docker integration
 doctrus list -v              # Show task details and dependencies
 doctrus run --dry-run task   # Preview execution order
 ```
-
-## CI/CD & Releases
-
-Doctrus uses GitHub Actions for automated testing, building, and releasing:
-
-### Automated Workflows
-
-- **Testing**: Runs on every push to `main` branch
-  - Unit tests with race detection
-  - Code coverage reporting
-  - Multi-platform compatibility checks
-
-- **Automated Releases**: Triggers on tag creation (`git tag v1.0.0 && git push origin v1.0.0`)
-  - Automatically creates GitHub release
-  - Cross-compiles for 6 platforms (Linux, macOS, Windows × x86_64/ARM64/ARM)
-  - Generates SHA256 checksums
-  - Uploads all binaries as release assets
-  - Detects pre-releases from tag names (beta/alpha/rc)
-
-- **Release Assets**: Automatically generated
-  - `.tar.gz` archives for Unix systems (Linux/macOS)
-  - `.zip` archives for Windows
-  - SHA256 checksum files for all binaries
-  - Optimized binary sizes with `-s -w` flags
-
-### Release Process
-
-**Fully Automated!** Just create and push a tag:
-
-1. **Create Git Tag**: `git tag -a v1.0.0 -m "Release v1.0.0"`
-2. **Push Tag**: `git push origin v1.0.0`
-3. **🎉 Done!** GitHub Actions automatically:
-   - Creates the GitHub release
-   - Builds binaries for all platforms
-   - Uploads binaries with checksums
-   - Users can download immediately
-
-**Supported Tag Formats:**
-- `v1.0.0` - Stable release
-- `v1.0.0-beta.1` - Beta release (marked as pre-release)
-- `v1.0.0-alpha.1` - Alpha release (marked as pre-release)
-- `v1.0.0-rc.1` - Release candidate (marked as pre-release)
-
-### Supported Platforms
-
-| OS | Architecture | Format | Status |
-|----|-------------|--------|--------|
-| Linux | x86_64 | tar.gz | ✅ Automated |
-| Linux | ARM64 | tar.gz | ✅ Automated |
-| macOS | x86_64 | tar.gz | ✅ Automated |
-| macOS | ARM64 | tar.gz | ✅ Automated |
-| Windows | x86_64 | zip | ✅ Automated |
-| Windows | ARM | zip | ✅ Automated |
 
 ## Contributing
 
