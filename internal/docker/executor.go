@@ -83,8 +83,20 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
+	workDir, isAbsolute := e.containerWorkDir(execution)
+	if workDir != "" && workDir != "." && isAbsolute {
+		args = append(args, "--workdir", workDir)
+	}
+
 	args = append(args, containerName)
-	args = append(args, execution.Task.Command...)
+
+	commandArgs := execution.Task.Command
+	if workDir != "" && workDir != "." && !isAbsolute {
+		shellCommand := buildShellCommand(workDir, execution.Task.Command)
+		commandArgs = []string{"sh", "-lc", shellCommand}
+	}
+
+	args = append(args, commandArgs...)
 
 	return e.runCommand(ctx, "docker", args, execution.AbsPath, env)
 }
@@ -148,6 +160,60 @@ func (e *Executor) buildEnvVars(execution *workspace.TaskExecution) map[string]s
 	}
 
 	return env
+}
+
+func (e *Executor) containerWorkDir(execution *workspace.TaskExecution) (string, bool) {
+	workspacePath := execution.Workspace.Path
+	if workspacePath == "" {
+		return "", false
+	}
+
+	if filepath.IsAbs(workspacePath) {
+		return filepath.ToSlash(workspacePath), true
+	}
+
+	relPath, err := filepath.Rel(e.workingDir, execution.AbsPath)
+	if err == nil {
+		relPath = filepath.ToSlash(relPath)
+		if relPath == "" {
+			return ".", false
+		}
+		return relPath, false
+	}
+
+	clean := strings.TrimPrefix(filepath.ToSlash(workspacePath), "./")
+	if clean == "" {
+		return ".", false
+	}
+	return clean, false
+}
+
+func buildShellCommand(workDir string, command []string) string {
+	target := workDir
+	if target == "" {
+		target = "."
+	}
+
+	return fmt.Sprintf("cd %s && %s", shellEscape(target), shellJoin(command))
+}
+
+func shellJoin(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellEscape(arg)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellEscape(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func (e *Executor) IsDockerComposeAvailable() bool {

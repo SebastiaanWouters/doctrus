@@ -136,10 +136,6 @@ func (c *Config) validate() error {
 	}
 
 	for name, workspace := range c.Workspaces {
-		if workspace.Path == "" {
-			return fmt.Errorf("workspace %s: path is required", name)
-		}
-
 		if len(workspace.Tasks) == 0 {
 			return fmt.Errorf("workspace %s: at least one task is required", name)
 		}

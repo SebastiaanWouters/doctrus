@@ -79,7 +79,7 @@ pre:
 
 workspaces:
   frontend:
-    path: ./frontend
+    path: ./frontend                       # Optional: defaults to the doctrus.yml directory
     container: frontend  # Optional: Docker container name
     env:
       NODE_ENV: development
@@ -126,6 +126,9 @@ workspaces:
 docker:
   compose_file: docker-compose.yml
 ```
+
+Workspace options:
+- `path` (optional): working directory for all tasks in the workspace. If omitted, Doctrus uses the directory containing `doctrus.yml` locally and the container's default working directory when running in Docker. When set, Doctrus changes into this directory before executing commands both locally and inside containers.
 
 Key task options:
 - `verbose` (default `true`): controls whether Doctrus prints the task's command stdout/stderr. Set it to `false` for especially noisy commands; use `doctrus run --verbose` to override at runtime.

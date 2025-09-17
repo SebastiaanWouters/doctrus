@@ -273,6 +273,39 @@ func TestManagerResolveTaskExecution(t *testing.T) {
 	}
 }
 
+func TestManagerResolveTaskExecutionDefaultPath(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		Version: "1.0",
+		Workspaces: map[string]config.Workspace{
+			"app": {
+				Tasks: map[string]config.Task{
+					"build": {Command: []string{"echo", "build"}},
+				},
+			},
+		},
+	}
+
+	manager := NewManager(cfg, tempDir)
+	execution, err := manager.ResolveTaskExecution("app", "build")
+	if err != nil {
+		t.Fatalf("ResolveTaskExecution() error = %v", err)
+	}
+
+	absPath := execution.AbsPath
+	if absPath != tempDir {
+		t.Fatalf("AbsPath = %q, want %q", absPath, tempDir)
+	}
+
+	if execution.Workspace.Path != "" {
+		t.Fatalf("Workspace.Path = %q, want empty string", execution.Workspace.Path)
+	}
+
+	if err := manager.ValidateWorkspaces(); err != nil {
+		t.Fatalf("ValidateWorkspaces() error = %v", err)
+	}
+}
+
 func TestManagerResolveDependencies(t *testing.T) {
 	cfg := &config.Config{
 		Version: "1.0",

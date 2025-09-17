@@ -29,7 +29,7 @@ func TestConfigValidation(t *testing.T) {
 			errMsg:  "at least one workspace is required",
 		},
 		{
-			name: "workspace without path",
+			name: "workspace defaults to config dir",
 			config: Config{
 				Version: "1.0",
 				Workspaces: map[string]Workspace{
@@ -40,8 +40,7 @@ func TestConfigValidation(t *testing.T) {
 					},
 				},
 			},
-			wantErr: true,
-			errMsg:  "workspace test: path is required",
+			wantErr: false,
 		},
 		{
 			name: "workspace without tasks",
