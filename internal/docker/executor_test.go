@@ -107,7 +107,7 @@ func TestExecuteLocalUsesWorkspacePath(t *testing.T) {
 		AbsPath:   workspaceDir,
 	}
 
-	result := executor.executeLocal(context.Background(), execution)
+	result := executor.executeLocal(context.Background(), execution, nil, nil)
 	if result.Error != nil {
 		t.Fatalf("executeLocal() error = %v", result.Error)
 	}

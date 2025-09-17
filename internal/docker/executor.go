@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,15 +36,15 @@ func NewExecutor(cfg *config.Config, workingDir string) *Executor {
 	}
 }
 
-func (e *Executor) Execute(ctx context.Context, execution *workspace.TaskExecution) *ExecutionResult {
+func (e *Executor) Execute(ctx context.Context, execution *workspace.TaskExecution, stdoutWriter, stderrWriter io.Writer) *ExecutionResult {
 	effectiveContainer := e.config.GetEffectiveContainer(execution.WorkspaceName, execution.TaskName)
 	if effectiveContainer != "" {
-		return e.executeInContainer(ctx, execution, effectiveContainer)
+		return e.executeInContainer(ctx, execution, effectiveContainer, stdoutWriter, stderrWriter)
 	}
-	return e.executeLocal(ctx, execution)
+	return e.executeLocal(ctx, execution, stdoutWriter, stderrWriter)
 }
 
-func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.TaskExecution, containerName string) *ExecutionResult {
+func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.TaskExecution, containerName string, stdoutWriter, stderrWriter io.Writer) *ExecutionResult {
 	dockerConfig := e.config.GetEffectiveDockerConfig(execution.WorkspaceName, execution.TaskName)
 	composeFile := dockerConfig.ComposeFile
 	if composeFile == "" {
@@ -98,10 +99,10 @@ func (e *Executor) executeInContainer(ctx context.Context, execution *workspace.
 
 	args = append(args, commandArgs...)
 
-	return e.runCommand(ctx, "docker", args, execution.AbsPath, env)
+	return e.runCommand(ctx, "docker", args, execution.AbsPath, env, stdoutWriter, stderrWriter)
 }
 
-func (e *Executor) executeLocal(ctx context.Context, execution *workspace.TaskExecution) *ExecutionResult {
+func (e *Executor) executeLocal(ctx context.Context, execution *workspace.TaskExecution, stdoutWriter, stderrWriter io.Writer) *ExecutionResult {
 	if len(execution.Task.Command) == 0 {
 		return &ExecutionResult{
 			ExitCode: 1,
@@ -113,10 +114,10 @@ func (e *Executor) executeLocal(ctx context.Context, execution *workspace.TaskEx
 	args := execution.Task.Command[1:]
 	env := e.buildEnvVars(execution)
 
-	return e.runCommand(ctx, command, args, execution.AbsPath, env)
+	return e.runCommand(ctx, command, args, execution.AbsPath, env, stdoutWriter, stderrWriter)
 }
 
-func (e *Executor) runCommand(ctx context.Context, command string, args []string, workDir string, env map[string]string) *ExecutionResult {
+func (e *Executor) runCommand(ctx context.Context, command string, args []string, workDir string, env map[string]string, stdoutWriter, stderrWriter io.Writer) *ExecutionResult {
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = workDir
 
@@ -127,8 +128,17 @@ func (e *Executor) runCommand(ctx context.Context, command string, args []string
 	cmd.Env = envList
 
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if stdoutWriter != nil {
+		cmd.Stdout = io.MultiWriter(&stdout, stdoutWriter)
+	} else {
+		cmd.Stdout = &stdout
+	}
+
+	if stderrWriter != nil {
+		cmd.Stderr = io.MultiWriter(&stderr, stderrWriter)
+	} else {
+		cmd.Stderr = &stderr
+	}
 
 	err := cmd.Run()
 	exitCode := 0

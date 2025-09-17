@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,8 +167,14 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 		return nil
 	}
 
+	var stdoutWriter, stderrWriter io.Writer
+	if detailedLogging {
+		stdoutWriter = newTaskLogWriter(c, taskKey, "stdout")
+		stderrWriter = newTaskLogWriter(c, taskKey, "stderr")
+	}
+
 	startTime := time.Now()
-	result := c.executor.Execute(ctx, execution)
+	result := c.executor.Execute(ctx, execution, stdoutWriter, stderrWriter)
 	duration := time.Since(startTime)
 
 	if result.Error != nil && result.ExitCode == 0 {
@@ -176,12 +183,12 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	success := result.ExitCode == 0
 
-	if detailedLogging || !success {
-		if result.Stdout != "" {
-			c.printf("  stdout:\n%s\n", indentOutput(result.Stdout))
+	if !success {
+		if !detailedLogging && result.Stdout != "" {
+			c.printBufferedOutput(taskKey, "stdout", result.Stdout)
 		}
-		if result.Stderr != "" {
-			c.printf("  stderr:\n%s\n", indentOutput(result.Stderr))
+		if !detailedLogging && result.Stderr != "" {
+			c.printBufferedOutput(taskKey, "stderr", result.Stderr)
 		}
 	}
 
@@ -259,14 +266,6 @@ func (c *CLI) findTaskInWorkspaces(taskName string) ([]string, error) {
 	}
 
 	return found, nil
-}
-
-func indentOutput(output string) string {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for i, line := range lines {
-		lines[i] = "    " + line
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (c *CLI) ensurePreRunCommands(ctx context.Context) error {
@@ -501,4 +500,55 @@ func (c *CLI) collectDependencies(currentWorkspace string, task *config.Task) ([
 
 func isParallelCompound(task *config.Task) bool {
 	return len(task.Command) == 0 && isTaskParallel(task)
+}
+
+type taskLogWriter struct {
+	cli         *CLI
+	prefix      string
+	atLineStart bool
+}
+
+func newTaskLogWriter(cli *CLI, taskKey, stream string) io.Writer {
+	return &taskLogWriter{
+		cli:         cli,
+		prefix:      fmt.Sprintf("[%s][%s] ", taskKey, stream),
+		atLineStart: true,
+	}
+}
+
+func (w *taskLogWriter) Write(p []byte) (int, error) {
+	w.cli.outputMu.Lock()
+	defer w.cli.outputMu.Unlock()
+
+	for _, b := range p {
+		if w.atLineStart {
+			fmt.Print(w.prefix)
+			w.atLineStart = false
+		}
+		fmt.Printf("%c", b)
+		if b == '\n' {
+			w.atLineStart = true
+		}
+	}
+
+	return len(p), nil
+}
+
+func (c *CLI) printBufferedOutput(taskKey, stream, output string) {
+	if strings.TrimSpace(output) == "" {
+		return
+	}
+	writer := newTaskLogWriter(c, taskKey, stream)
+	if !strings.HasSuffix(output, "\n") {
+		output += "\n"
+	}
+	_, _ = writer.Write([]byte(output))
+}
+
+func indentOutput(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for i, line := range lines {
+		lines[i] = "    " + line
+	}
+	return strings.Join(lines, "\n")
 }
