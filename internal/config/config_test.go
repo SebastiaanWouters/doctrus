@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -72,9 +73,29 @@ func TestConfigValidation(t *testing.T) {
 			errMsg:  "workspace test, task build: command is required unless task has dependencies (compound task)",
 		},
 		{
+			name: "pre without command",
+			config: Config{
+				Version: "1.0",
+				Pre:     []PreCommand{{}},
+				Workspaces: map[string]Workspace{
+					"test": {
+						Path: "./test",
+						Tasks: map[string]Task{
+							"build": {Command: []string{"echo", "test"}},
+						},
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "pre[0]: command is required",
+		},
+		{
 			name: "valid config",
 			config: Config{
 				Version: "1.0",
+				Pre: []PreCommand{
+					{Command: []string{"mkdir", "-p", "cache"}},
+				},
 				Workspaces: map[string]Workspace{
 					"frontend": {
 						Path: "./frontend",
@@ -214,6 +235,109 @@ workspaces:
 				t.Error("Load() returned nil config without error")
 			}
 		})
+	}
+}
+
+func TestTaskVerboseDefaultAndOverride(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "doctrus.yml")
+	content := `version: "1.0"
+workspaces:
+  app:
+    path: ./app
+    tasks:
+      default:
+        command: ["echo", "default"]
+      silent:
+        command: ["echo", "silent"]
+        verbose: false
+      loud:
+        command: ["echo", "loud"]
+        verbose: true
+`
+
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	cfg, _, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	workspace, ok := cfg.Workspaces["app"]
+	if !ok {
+		t.Fatalf("expected workspace 'app' to exist")
+	}
+
+	defaultTask, ok := workspace.Tasks["default"]
+	if !ok {
+		t.Fatalf("expected task 'default' to exist")
+	}
+	if defaultTask.Verbose != nil {
+		t.Errorf("defaultTask.Verbose = %v, want nil (implicit true)", defaultTask.Verbose)
+	}
+
+	silentTask, ok := workspace.Tasks["silent"]
+	if !ok {
+		t.Fatalf("expected task 'silent' to exist")
+	}
+	if silentTask.Verbose == nil || *silentTask.Verbose {
+		t.Errorf("silentTask.Verbose = %v, want false", silentTask.Verbose)
+	}
+
+	loudTask, ok := workspace.Tasks["loud"]
+	if !ok {
+		t.Fatalf("expected task 'loud' to exist")
+	}
+	if loudTask.Verbose == nil || !*loudTask.Verbose {
+		t.Errorf("loudTask.Verbose = %v, want true", loudTask.Verbose)
+	}
+}
+
+func TestConfigLoadPreCommands(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "doctrus.yml")
+	content := `version: "1.0"
+pre:
+  - command: ["mkdir", "-p", "cache"]
+    description: "ensure cache directory"
+    dir: ./
+    env:
+      FOO: bar
+workspaces:
+  app:
+    path: ./app
+    tasks:
+      build:
+        command: ["echo", "build"]
+`
+
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	cfg, _, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.Pre) != 1 {
+		t.Fatalf("expected 1 pre command, got %d", len(cfg.Pre))
+	}
+
+	cmd := cfg.Pre[0]
+	if got, want := cmd.Command, []string{"mkdir", "-p", "cache"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("command mismatch: got %v, want %v", got, want)
+	}
+	if cmd.Description != "ensure cache directory" {
+		t.Fatalf("description mismatch: %s", cmd.Description)
+	}
+	if cmd.Dir != "./" {
+		t.Fatalf("dir mismatch: %s", cmd.Dir)
+	}
+	if cmd.Env["FOO"] != "bar" {
+		t.Fatalf("env mismatch: %v", cmd.Env)
 	}
 }
 

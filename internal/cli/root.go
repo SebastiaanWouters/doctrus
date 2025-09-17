@@ -21,12 +21,13 @@ var (
 )
 
 type CLI struct {
-	config    *config.Config
-	workspace *workspace.Manager
-	executor  *docker.Executor
-	tracker   *deps.Tracker
-	cache     *cache.Manager
-	basePath  string
+	config         *config.Config
+	workspace      *workspace.Manager
+	executor       *docker.Executor
+	tracker        *deps.Tracker
+	cache          *cache.Manager
+	basePath       string
+	preRunExecuted bool
 }
 
 func newCLI() (*CLI, error) {

@@ -29,4 +29,6 @@
 
 ## Configuration & Cache Tips
 - Keep the canonical `doctrus.yml` at the repo root and document new workspace patterns under `examples/` for discoverability.
+- Use `pre` entries for repository-wide setup (e.g., `mkdir -p cache`) that must happen before any task executes; they run once per CLI invocation from the repo root.
+- Tasks accept `verbose: false` to suppress stdout/stderr in routine runs; `doctrus run --verbose` forces output when debugging.
 - Repository cache resides at `.doctrus/cache`; use `doctrus cache clear` or `doctrus run --force` after changing task inputs or outputs.

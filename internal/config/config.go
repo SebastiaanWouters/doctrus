@@ -12,6 +12,7 @@ type Config struct {
 	Version    string               `yaml:"version"`
 	Workspaces map[string]Workspace `yaml:"workspaces"`
 	Docker     DockerConfig         `yaml:"docker,omitempty"`
+	Pre        []PreCommand         `yaml:"pre,omitempty"`
 }
 
 type Workspace struct {
@@ -31,6 +32,15 @@ type Task struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 	Container   *string           `yaml:"container,omitempty"`
 	Docker      *TaskDockerConfig `yaml:"docker,omitempty"`
+	Verbose     *bool             `yaml:"verbose,omitempty"`
+}
+
+type PreCommand struct {
+	Command     []string          `yaml:"command"`
+	Description string            `yaml:"description,omitempty"`
+	Dir         string            `yaml:"dir,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	Verbose     *bool             `yaml:"verbose,omitempty"`
 }
 
 type DockerConfig struct {
@@ -50,7 +60,7 @@ func Load(configPath string) (*Config, string, error) {
 	// If config path is not absolute, search for it in parent directories
 	var absPath string
 	var configDir string
-	
+
 	if filepath.IsAbs(configPath) {
 		absPath = configPath
 		configDir = filepath.Dir(absPath)
@@ -60,7 +70,7 @@ func Load(configPath string) (*Config, string, error) {
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get working directory: %w", err)
 		}
-		
+
 		foundPath, foundDir := findConfigInParents(currentDir, configPath)
 		if foundPath == "" {
 			// If not found, try the original path relative to cwd
@@ -92,13 +102,13 @@ func Load(configPath string) (*Config, string, error) {
 // findConfigInParents searches for a config file in the current and parent directories
 func findConfigInParents(startDir, configName string) (string, string) {
 	currentDir := startDir
-	
+
 	for {
 		configPath := filepath.Join(currentDir, configName)
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, currentDir
 		}
-		
+
 		parentDir := filepath.Dir(currentDir)
 		if parentDir == currentDir {
 			// Reached root directory
@@ -106,7 +116,7 @@ func findConfigInParents(startDir, configName string) (string, string) {
 		}
 		currentDir = parentDir
 	}
-	
+
 	return "", ""
 }
 
@@ -117,6 +127,12 @@ func (c *Config) validate() error {
 
 	if len(c.Workspaces) == 0 {
 		return fmt.Errorf("at least one workspace is required")
+	}
+
+	for i, pre := range c.Pre {
+		if len(pre.Command) == 0 {
+			return fmt.Errorf("pre[%d]: command is required", i)
+		}
 	}
 
 	for name, workspace := range c.Workspaces {

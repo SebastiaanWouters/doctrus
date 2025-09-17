@@ -73,6 +73,10 @@ Create a `doctrus.yml` file in your project root:
 ```yaml
 version: "1.0"
 
+pre:
+  - command: ["mkdir", "-p", ".doctrus/cache"]
+    description: "Ensure task cache directory exists"
+
 workspaces:
   frontend:
     path: ./frontend
@@ -122,6 +126,10 @@ workspaces:
 docker:
   compose_file: docker-compose.yml
 ```
+
+Key task options:
+- `verbose` (default `true`): controls whether Doctrus prints the task's command stdout/stderr. Set it to `false` for especially noisy commands; use `doctrus run --verbose` to override at runtime.
+- `pre`: optional commands that execute once before any tasks fire during `doctrus run`, useful for provisioning directories or dependencies.
 
 ## Multi-Workspace Task Execution
 
