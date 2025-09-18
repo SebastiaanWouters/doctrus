@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -95,6 +96,43 @@ func TestIsTaskParallel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTaskLogWriterPrefixesOnlyWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	cli := &CLI{}
+
+	t.Run("no prefix retains raw output", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := newTaskLogWriter(cli, "app:lint", "stdout", false).(*taskLogWriter)
+		writer.dest = &buf
+
+		msg := "Regular output ✨\nSecond line"
+		if _, err := writer.Write([]byte(msg)); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+
+		if got, want := buf.String(), msg; got != want {
+			t.Fatalf("Write() got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("prefix applies per line for compound flows", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := newTaskLogWriter(cli, "web:build", "stderr", true).(*taskLogWriter)
+		writer.dest = &buf
+
+		msg := "line one\nsecond 🎉\nthird"
+		if _, err := writer.Write([]byte(msg)); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+
+		want := "[web:build][stderr] line one\n[web:build][stderr] second 🎉\n[web:build][stderr] third"
+		if got := buf.String(); got != want {
+			t.Fatalf("Write() got %q, want %q", got, want)
+		}
+	})
 }
 
 func boolPtr(v bool) *bool {

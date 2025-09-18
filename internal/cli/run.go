@@ -109,10 +109,10 @@ func (c *CLI) runTaskInWorkspace(ctx context.Context, runner *taskRunner, worksp
 		c.printf("\n")
 	}
 
-	return runner.RunTask(ctx, workspaceName, taskName)
+	return runner.RunTask(ctx, workspaceName, taskName, false)
 }
 
-func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecution) error {
+func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecution, showTaskPrefix bool) error {
 	taskKey := fmt.Sprintf("%s:%s", execution.WorkspaceName, execution.TaskName)
 
 	task := execution.Task
@@ -169,8 +169,8 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	var stdoutWriter, stderrWriter io.Writer
 	if detailedLogging {
-		stdoutWriter = newTaskLogWriter(c, taskKey, "stdout")
-		stderrWriter = newTaskLogWriter(c, taskKey, "stderr")
+		stdoutWriter = newTaskLogWriter(c, taskKey, "stdout", showTaskPrefix)
+		stderrWriter = newTaskLogWriter(c, taskKey, "stderr", showTaskPrefix)
 	}
 
 	startTime := time.Now()
@@ -185,10 +185,10 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	if !success {
 		if !detailedLogging && result.Stdout != "" {
-			c.printBufferedOutput(taskKey, "stdout", result.Stdout)
+			c.printBufferedOutput(taskKey, "stdout", result.Stdout, showTaskPrefix)
 		}
 		if !detailedLogging && result.Stderr != "" {
-			c.printBufferedOutput(taskKey, "stderr", result.Stderr)
+			c.printBufferedOutput(taskKey, "stderr", result.Stderr, showTaskPrefix)
 		}
 	}
 
@@ -388,7 +388,7 @@ func newTaskRunner(cli *CLI) *taskRunner {
 	}
 }
 
-func (r *taskRunner) RunTask(ctx context.Context, workspaceName, taskName string) error {
+func (r *taskRunner) RunTask(ctx context.Context, workspaceName, taskName string, triggeredByCompound bool) error {
 	taskKey := fmt.Sprintf("%s:%s", workspaceName, taskName)
 
 	r.mu.Lock()
@@ -407,7 +407,7 @@ func (r *taskRunner) RunTask(ctx context.Context, workspaceName, taskName string
 	r.states[taskKey] = state
 	r.mu.Unlock()
 
-	err := r.execute(ctx, workspaceName, taskName)
+	err := r.execute(ctx, workspaceName, taskName, triggeredByCompound)
 
 	r.mu.Lock()
 	state.running = false
@@ -419,7 +419,7 @@ func (r *taskRunner) RunTask(ctx context.Context, workspaceName, taskName string
 	return err
 }
 
-func (r *taskRunner) execute(ctx context.Context, workspaceName, taskName string) error {
+func (r *taskRunner) execute(ctx context.Context, workspaceName, taskName string, triggeredByCompound bool) error {
 	execution, err := r.cli.workspace.ResolveTaskExecution(workspaceName, taskName)
 	if err != nil {
 		return err
@@ -432,22 +432,23 @@ func (r *taskRunner) execute(ctx context.Context, workspaceName, taskName string
 
 	if len(deps) > 0 {
 		if isParallelCompound(execution.Task) {
-			if err := r.runDependenciesParallel(ctx, deps); err != nil {
+			if err := r.runDependenciesParallel(ctx, deps, triggeredByCompound || len(execution.Task.Command) == 0); err != nil {
 				return err
 			}
 		} else {
+			childCompoundContext := triggeredByCompound || len(execution.Task.Command) == 0
 			for _, dep := range deps {
-				if err := r.RunTask(ctx, dep.workspace, dep.task); err != nil {
+				if err := r.RunTask(ctx, dep.workspace, dep.task, childCompoundContext); err != nil {
 					return err
 				}
 			}
 		}
 	}
 
-	return r.cli.runExecution(ctx, execution)
+	return r.cli.runExecution(ctx, execution, triggeredByCompound)
 }
 
-func (r *taskRunner) runDependenciesParallel(ctx context.Context, deps []dependencySpec) error {
+func (r *taskRunner) runDependenciesParallel(ctx context.Context, deps []dependencySpec, triggeredByCompound bool) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(deps))
 
@@ -456,7 +457,7 @@ func (r *taskRunner) runDependenciesParallel(ctx context.Context, deps []depende
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := r.RunTask(ctx, dep.workspace, dep.task); err != nil {
+			if err := r.RunTask(ctx, dep.workspace, dep.task, triggeredByCompound); err != nil {
 				errCh <- err
 			}
 		}()
@@ -504,14 +505,19 @@ func isParallelCompound(task *config.Task) bool {
 
 type taskLogWriter struct {
 	cli         *CLI
-	prefix      string
+	dest        io.Writer
+	prefix      []byte
+	showPrefix  bool
 	atLineStart bool
 }
 
-func newTaskLogWriter(cli *CLI, taskKey, stream string) io.Writer {
+func newTaskLogWriter(cli *CLI, taskKey, stream string, showPrefix bool) io.Writer {
+	prefix := []byte(fmt.Sprintf("[%s][%s] ", taskKey, stream))
 	return &taskLogWriter{
 		cli:         cli,
-		prefix:      fmt.Sprintf("[%s][%s] ", taskKey, stream),
+		dest:        os.Stdout,
+		prefix:      prefix,
+		showPrefix:  showPrefix,
 		atLineStart: true,
 	}
 }
@@ -520,25 +526,42 @@ func (w *taskLogWriter) Write(p []byte) (int, error) {
 	w.cli.outputMu.Lock()
 	defer w.cli.outputMu.Unlock()
 
-	for _, b := range p {
-		if w.atLineStart {
-			fmt.Print(w.prefix)
+	total := 0
+	rest := p
+
+	for len(rest) > 0 {
+		if w.atLineStart && w.showPrefix {
+			if _, err := w.dest.Write(w.prefix); err != nil {
+				return total, err
+			}
 			w.atLineStart = false
 		}
-		fmt.Printf("%c", b)
-		if b == '\n' {
-			w.atLineStart = true
+
+		newlineIndex := bytes.IndexByte(rest, '\n')
+		if newlineIndex == -1 {
+			written, err := w.dest.Write(rest)
+			total += written
+			return total, err
 		}
+
+		chunk := rest[:newlineIndex+1]
+		written, err := w.dest.Write(chunk)
+		total += written
+		if err != nil {
+			return total, err
+		}
+		w.atLineStart = true
+		rest = rest[newlineIndex+1:]
 	}
 
-	return len(p), nil
+	return total, nil
 }
 
-func (c *CLI) printBufferedOutput(taskKey, stream, output string) {
+func (c *CLI) printBufferedOutput(taskKey, stream, output string, showPrefix bool) {
 	if strings.TrimSpace(output) == "" {
 		return
 	}
-	writer := newTaskLogWriter(c, taskKey, stream)
+	writer := newTaskLogWriter(c, taskKey, stream, showPrefix)
 	if !strings.HasSuffix(output, "\n") {
 		output += "\n"
 	}
