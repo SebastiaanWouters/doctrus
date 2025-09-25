@@ -201,9 +201,12 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 	}
 
 	var stdoutWriter, stderrWriter io.Writer
+	var stdoutFlusher, stderrFlusher interface{ Flush() error }
 	if detailedLogging {
 		stdoutWriter = &colorResetWriter{dest: newTaskLogWriter(c, taskKey, "stdout", showTaskPrefix)}
 		stderrWriter = &colorResetWriter{dest: newTaskLogWriter(c, taskKey, "stderr", showTaskPrefix)}
+		stdoutFlusher = stdoutWriter.(*colorResetWriter)
+		stderrFlusher = stderrWriter.(*colorResetWriter)
 	}
 
 	startTime := time.Now()
@@ -212,7 +215,13 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	// Ensure colors are reset after command execution
 	if detailedLogging {
-		c.printf("%s", colorReset)
+		// Flush the writers to reset colors properly
+		if err := stdoutFlusher.Flush(); err != nil {
+			c.printf("Warning: failed to flush stdout colors: %v\n", err)
+		}
+		if err := stderrFlusher.Flush(); err != nil {
+			c.printf("Warning: failed to flush stderr colors: %v\n", err)
+		}
 	}
 
 	if result.Error != nil && result.ExitCode == 0 {
@@ -573,9 +582,16 @@ type colorResetWriter struct {
 
 func (w *colorResetWriter) Write(p []byte) (int, error) {
 	n, err := w.dest.Write(p)
-	// Always try to reset colors after writing
-	w.dest.Write([]byte(colorReset))
+	// Don't reset colors after every write - this breaks colored output formatting
+	// Colors will be reset when the writer is closed or flushed
 	return n, err
+}
+
+// Flush ensures colors are reset and any buffered output is written
+func (w *colorResetWriter) Flush() error {
+	// Reset colors at the end of output
+	_, err := w.dest.Write([]byte(colorReset))
+	return err
 }
 
 func newTaskLogWriter(cli *CLI, taskKey, stream string, showPrefix bool) io.Writer {
@@ -633,6 +649,10 @@ func (c *CLI) printBufferedOutput(taskKey, stream, output string, showPrefix boo
 		output += "\n"
 	}
 	_, _ = writer.Write([]byte(output))
+	// Flush to ensure colors are reset
+	if err := writer.Flush(); err != nil {
+		c.printf("Warning: failed to flush colors for %s: %v\n", stream, err)
+	}
 }
 
 func indentOutput(output string) string {
