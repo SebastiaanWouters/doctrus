@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,12 +20,36 @@ import (
 	"doctrus/internal/workspace"
 )
 
+const (
+	// ANSI color reset sequence
+	colorReset = "\033[0m"
+)
+
 var (
 	forceBuild bool
 	skipCache  bool
 	parallel   int
 	showDiff   bool
 )
+
+// TaskError represents an error from a failed task with its exit code
+type TaskError struct {
+	ExitCode int
+	Message  string
+}
+
+func (e *TaskError) Error() string {
+	return e.Message
+}
+
+// GetExitCode extracts the exit code from an error, returns 0 if not a TaskError
+func GetExitCode(err error) int {
+	var taskErr *TaskError
+	if errors.As(err, &taskErr) {
+		return taskErr.ExitCode
+	}
+	return 0
+}
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -55,7 +80,13 @@ func runTask(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx := context.Background()
+	// Create a context that can be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()
+		// Ensure terminal is in a clean state
+		cli.cleanup()
+	}()
 
 	if err := cli.ensurePreRunCommands(ctx); err != nil {
 		return err
@@ -65,6 +96,8 @@ func runTask(cmd *cobra.Command, args []string) error {
 
 	for _, taskSpec := range args {
 		if err := cli.runSingleTask(ctx, runner, taskSpec); err != nil {
+			// Cancel context to ensure cleanup
+			cancel()
 			return fmt.Errorf("failed to run task %s: %w", taskSpec, err)
 		}
 	}
@@ -169,13 +202,18 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 
 	var stdoutWriter, stderrWriter io.Writer
 	if detailedLogging {
-		stdoutWriter = newTaskLogWriter(c, taskKey, "stdout", showTaskPrefix)
-		stderrWriter = newTaskLogWriter(c, taskKey, "stderr", showTaskPrefix)
+		stdoutWriter = &colorResetWriter{dest: newTaskLogWriter(c, taskKey, "stdout", showTaskPrefix)}
+		stderrWriter = &colorResetWriter{dest: newTaskLogWriter(c, taskKey, "stderr", showTaskPrefix)}
 	}
 
 	startTime := time.Now()
 	result := c.executor.Execute(ctx, execution, stdoutWriter, stderrWriter)
 	duration := time.Since(startTime)
+
+	// Ensure colors are reset after command execution
+	if detailedLogging {
+		c.printf("%s", colorReset)
+	}
 
 	if result.Error != nil && result.ExitCode == 0 {
 		return fmt.Errorf("execution error: %w", result.Error)
@@ -196,7 +234,10 @@ func (c *CLI) runExecution(ctx context.Context, execution *workspace.TaskExecuti
 		c.printf("  ✓ Executed successfully in %v\n", duration.Round(time.Millisecond))
 	} else {
 		c.printf("  ✗ Failed with exit code %d in %v\n", result.ExitCode, duration.Round(time.Millisecond))
-		return fmt.Errorf("task failed with exit code %d", result.ExitCode)
+		return &TaskError{
+			ExitCode: result.ExitCode,
+			Message:  fmt.Sprintf("task failed with exit code %d", result.ExitCode),
+		}
 	}
 
 	if task.Cache {
@@ -345,9 +386,15 @@ func (c *CLI) ensurePreRunCommands(ctx context.Context) error {
 			}
 		}
 
+		// Ensure colors are reset after pre-run command execution
+		c.printf("%s", colorReset)
+
 		if err != nil {
 			c.printf("  ✗ Failed with exit code %d in %v\n", exitCode, duration.Round(time.Millisecond))
-			return fmt.Errorf("pre-run command %d failed: %w", idx+1, err)
+			return &TaskError{
+				ExitCode: exitCode,
+				Message:  fmt.Sprintf("pre-run command %d failed: %v", idx+1, err),
+			}
 		}
 
 		c.printf("  ✓ Completed in %v\n", duration.Round(time.Millisecond))
@@ -361,6 +408,14 @@ func (c *CLI) printf(format string, args ...interface{}) {
 	c.outputMu.Lock()
 	defer c.outputMu.Unlock()
 	fmt.Printf(format, args...)
+}
+
+// cleanup ensures the terminal is in a clean state
+func (c *CLI) cleanup() {
+	c.outputMu.Lock()
+	defer c.outputMu.Unlock()
+	// Reset colors and ensure we're at the beginning of a new line
+	fmt.Printf("%s\n", colorReset)
 }
 
 type dependencySpec struct {
@@ -511,6 +566,18 @@ type taskLogWriter struct {
 	atLineStart bool
 }
 
+// colorResetWriter ensures colors are reset after output
+type colorResetWriter struct {
+	dest io.Writer
+}
+
+func (w *colorResetWriter) Write(p []byte) (int, error) {
+	n, err := w.dest.Write(p)
+	// Always try to reset colors after writing
+	w.dest.Write([]byte(colorReset))
+	return n, err
+}
+
 func newTaskLogWriter(cli *CLI, taskKey, stream string, showPrefix bool) io.Writer {
 	prefix := []byte(fmt.Sprintf("[%s][%s] ", taskKey, stream))
 	return &taskLogWriter{
@@ -561,7 +628,7 @@ func (c *CLI) printBufferedOutput(taskKey, stream, output string, showPrefix boo
 	if strings.TrimSpace(output) == "" {
 		return
 	}
-	writer := newTaskLogWriter(c, taskKey, stream, showPrefix)
+	writer := &colorResetWriter{dest: newTaskLogWriter(c, taskKey, stream, showPrefix)}
 	if !strings.HasSuffix(output, "\n") {
 		output += "\n"
 	}

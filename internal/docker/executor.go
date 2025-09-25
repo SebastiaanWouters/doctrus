@@ -145,6 +145,9 @@ func (e *Executor) runCommand(ctx context.Context, command string, args []string
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
 			exitCode = exitError.ExitCode()
+		} else if ctx.Err() == context.Canceled {
+			// Command was cancelled, return appropriate exit code
+			exitCode = 130 // SIGINT exit code
 		} else {
 			exitCode = 1
 		}
