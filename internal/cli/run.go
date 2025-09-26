@@ -591,7 +591,20 @@ func (w *colorResetWriter) Write(p []byte) (int, error) {
 func (w *colorResetWriter) Flush() error {
 	// Reset colors at the end of output
 	_, err := w.dest.Write([]byte(colorReset))
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to write color reset sequence: %w", err)
+	}
+	return nil
+}
+
+// Close ensures colors are reset when the writer is closed
+func (w *colorResetWriter) Close() error {
+	// Reset colors when closing the writer
+	_, err := w.dest.Write([]byte(colorReset))
+	if err != nil {
+		return fmt.Errorf("failed to write color reset sequence on close: %w", err)
+	}
+	return nil
 }
 
 func newTaskLogWriter(cli *CLI, taskKey, stream string, showPrefix bool) io.Writer {
